@@ -281,6 +281,10 @@ object FlinkParameterServer {
               (pullId, workerPartitionIndex) => logic.onPullRecv(pullId, workerPartitionIndex, ps), { case (pushId, deltaUpdate) => logic.onPushRecv(pushId, deltaUpdate, ps) }
             )
           }
+
+          override def close(): Unit = {
+              logic.close(ps)
+            }
         })
         .setParallelism(psParallelism)
 
@@ -418,6 +422,11 @@ trait ParameterServerLogic[P, PSOut] extends Serializable {
     * Interface for answering pulls and creating output.
     */
   def onPushRecv(id: Int, deltaUpdate: P, ps: ParameterServer[P, PSOut]): Unit
+
+  /**
+    * Method called when processing is finished.
+    */
+  def close(ps: ParameterServer[P, PSOut]): Unit = ()
 }
 
 trait ParameterServer[P, PSOut] extends Serializable {
