@@ -1,5 +1,6 @@
 package hu.sztaki.ilab.ps
 
+import hu.sztaki.ilab.ps.entities.PullAnswer
 import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction}
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.streaming.api.functions.co.RichCoFlatMapFunction
@@ -19,7 +20,7 @@ trait ParameterServerClient[P, WOut] extends Serializable {
 }
 
 trait ClientReceiver[IN, P] extends Serializable {
-  def onPullAnswerRecv(msg: IN, pullHandler: (Int, P) => Unit)
+  def onPullAnswerRecv(msg: IN, pullHandler: PullAnswer[P] => Unit)
 }
 
 trait ClientSender[OUT, P] extends Serializable {
@@ -148,7 +149,7 @@ object FlinkPS {
                   getRuntimeContext.getIndexOfThisSubtask,
                   out)
               receiver.onPullAnswerRecv(msg, {
-                case (id, value) => logic.onPullRecv(id, value, psClient)
+                case PullAnswer(id, value) => logic.onPullRecv(id, value, psClient)
               })
             }
 

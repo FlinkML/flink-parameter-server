@@ -1,21 +1,19 @@
 package hu.sztaki.ilab.ps.server.receiver
 
 import hu.sztaki.ilab.ps.PSReceiver
-import hu.sztaki.ilab.ps.entities.WorkerOut
+import hu.sztaki.ilab.ps.entities.{Pull, Push, WorkerToPS}
 
-class SimplePSReceiver[P] extends PSReceiver[WorkerOut[P], P] {
+class SimplePSReceiver[P] extends PSReceiver[WorkerToPS[P], P] {
 
-  override def onWorkerMsg(msg: WorkerOut[P],
+  override def onWorkerMsg(wToPS: WorkerToPS[P],
                            onPullRecv: (Int, Int) => Unit,
                            onPushRecv: (Int, P) => Unit): Unit = {
-    msg.msg match {
-      case Left(l) =>
+    wToPS.msg match {
+      case Left(Pull(paramId)) =>
         // Passes key and partitionID
-        onPullRecv(l, msg.partitionId)
-      case Right(r) =>
-        r match {
-          case (key, delta) => onPushRecv(key, delta)
-        }
+        onPullRecv(paramId, wToPS.workerPartitionIndex)
+      case Right(Push(paramId, delta)) =>
+        onPushRecv(paramId, delta)
       case _ =>
         throw new Exception("Parameter server received unknown message.")
     }

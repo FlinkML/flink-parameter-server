@@ -6,7 +6,7 @@ import prop._
 import hu.sztaki.ilab.ps.FlinkPS._
 import hu.sztaki.ilab.ps.client.receiver.SimpleClientReceiver
 import hu.sztaki.ilab.ps.client.sender.SimpleClientSender
-import hu.sztaki.ilab.ps.entities.{WorkerIn, WorkerOut}
+import hu.sztaki.ilab.ps.entities.{PSToWorker, WorkerToPS}
 import hu.sztaki.ilab.ps.server.SimplePSLogic
 import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
 import hu.sztaki.ilab.ps.server.sender.SimplePSSender
@@ -91,8 +91,8 @@ class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
           new SimpleClientSender[P],
           new SimplePSReceiver[P],
           new SimplePSSender[P],
-          (x: WorkerOut[P]) => x.partitionId,
-          (x: WorkerIn[P]) => x.id % numberOfPartitions,
+          (x: WorkerToPS[P]) => x.workerPartitionIndex,
+          (x: PSToWorker[P]) => x.workerPartitionIndex % numberOfPartitions,
           4,
           4
         )

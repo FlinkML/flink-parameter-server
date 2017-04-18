@@ -5,7 +5,7 @@ import java.util.concurrent.locks.{Condition, ReentrantLock}
 
 import hu.sztaki.ilab.ps.client.receiver.SimpleClientReceiver
 import hu.sztaki.ilab.ps.client.sender.SimpleClientSender
-import hu.sztaki.ilab.ps.entities.{WorkerIn, WorkerOut}
+import hu.sztaki.ilab.ps.entities._
 import hu.sztaki.ilab.ps.matrix.factorization.Utils._
 import hu.sztaki.ilab.ps.server.SimplePSLogic
 import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
@@ -284,15 +284,15 @@ object PSOfflineMatrixFactorization {
       new SimplePSLogic[Array[Double]](
         x => factorInitDesc.open().nextFactor(x), { case (vec, deltaVec) => vec.zip(deltaVec).map(x => x._1 + x._2) })
 
-    val paramPartitioner: WorkerOut[Array[Double]] => Int = {
-      case WorkerOut(partitionId, msg) => msg match {
-        case Left(paramId) => Math.abs(paramId) % psParallelism
-        case Right((paramId, delta)) => Math.abs(paramId) % psParallelism
+    val paramPartitioner: WorkerToPS[Array[Double]] => Int = {
+      case WorkerToPS(partitionId, msg) => msg match {
+        case Left(Pull(paramId)) => Math.abs(paramId) % psParallelism
+        case Right(Push(paramId, delta)) => Math.abs(paramId) % psParallelism
       }
     }
 
-    val wInPartition: WorkerIn[Array[Double]] => Int = {
-      case WorkerIn(id, workerPartitionIndex, msg) => workerPartitionIndex
+    val wInPartition: PSToWorker[Array[Double]] => Int = {
+      case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 
     val modelUpdates = FlinkPS.psTransform(ratings, workerLogic2, serverLogic,
