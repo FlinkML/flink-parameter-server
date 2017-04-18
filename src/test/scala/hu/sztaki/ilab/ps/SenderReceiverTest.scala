@@ -2,33 +2,33 @@ package hu.sztaki.ilab.ps
 
 import hu.sztaki.ilab.ps.client.sender._
 import hu.sztaki.ilab.ps.common.Combinable
-import hu.sztaki.ilab.ps.entities.WorkerOut
+import hu.sztaki.ilab.ps.entities.{Pull, Push, WorkerToPS}
 import org.scalatest.concurrent.Eventually
 import org.scalatest.{BeforeAndAfter, FlatSpec, Matchers}
 import org.scalatest.prop.PropertyChecks
 import org.scalatest.time.{Seconds, Span}
 
-import scala.concurrent.duration._
 import scala.collection.mutable
+import scala.concurrent.duration._
 
 class SenderReceiverTest extends FlatSpec with PropertyChecks with Matchers with BeforeAndAfter  {
 
-  var pullMap: mutable.HashMap[Int, Int] = mutable.HashMap()
-  var pushMap: mutable.HashMap[Int, (Int, Double)] = mutable.HashMap()
+  var pullMap: mutable.HashMap[Int, Pull] = mutable.HashMap()
+  var pushMap: mutable.HashMap[Int, Push[Double]] = mutable.HashMap()
 
-  def simpleWorkerAction(data: WorkerOut[Double]): Unit = {
+  def simpleWorkerAction(data: WorkerToPS[Double]): Unit = {
     data.msg match {
-      case Left(id) => pullMap += ((data.partitionId, id))
-      case Right(tuple) => pushMap += ((data.partitionId, tuple))
+      case Left(pull) => pullMap += data.workerPartitionIndex -> pull
+      case Right(push) => pushMap += data.workerPartitionIndex -> push
     }
   }
 
-  def arrayWorkerAction(data: Array[WorkerOut[Double]]): Unit = {
+  def arrayWorkerAction(data: Array[WorkerToPS[Double]]): Unit = {
     data.foreach {
       out =>
         out.msg match {
-          case Left(id) => pullMap += ((out.partitionId, id))
-          case Right(tuple) => pushMap += ((out.partitionId, tuple))
+          case Left(pull) => pullMap += out.workerPartitionIndex -> pull
+          case Right(push) => pushMap += out.workerPartitionIndex -> push
         }
     }
   }
@@ -67,8 +67,8 @@ class SenderReceiverTest extends FlatSpec with PropertyChecks with Matchers with
   "counter client sender" should "work" in {
     val sendAfter = 3
 
-    val combinable: List[Combinable[WorkerOut[Double]]] = List(CountClientSender(sendAfter))
-    def condition(combinable: List[Combinable[WorkerOut[Double]]]): Boolean = {
+    val combinable: List[Combinable[WorkerToPS[Double]]] = List(CountClientSender(sendAfter))
+    def condition(combinable: List[Combinable[WorkerToPS[Double]]]): Boolean = {
       combinable.head.shouldSend()
     }
 
@@ -99,8 +99,8 @@ class SenderReceiverTest extends FlatSpec with PropertyChecks with Matchers with
   }
 
   "timer client sender" should "work" in {
-    val combinable: List[Combinable[WorkerOut[Double]]] = List(TimerClientSender(5 seconds))
-    def condition(combinable: List[Combinable[WorkerOut[Double]]]): Boolean = {
+    val combinable: List[Combinable[WorkerToPS[Double]]] = List(TimerClientSender(5 seconds))
+    def condition(combinable: List[Combinable[WorkerToPS[Double]]]): Boolean = {
       combinable.head.shouldSend()
     }
 
@@ -137,11 +137,11 @@ class SenderReceiverTest extends FlatSpec with PropertyChecks with Matchers with
   "combined counter OR timer sender test" should "be really awesome" in {
     val countLimit = 5
     val timeLimit = 5 seconds
-    val combinables: List[Combinable[WorkerOut[Double]]] =
+    val combinables: List[Combinable[WorkerToPS[Double]]] =
       List(CountClientSender(countLimit), TimerClientSender(timeLimit))
 
     // Meting either the counter or the timer condition should be enough. We are generous gods.
-    def condition(combinables: List[Combinable[WorkerOut[Double]]]): Boolean = {
+    def condition(combinables: List[Combinable[WorkerToPS[Double]]]): Boolean = {
       combinables.map(_.shouldSend()).reduce(_ || _)
     }
 
@@ -173,11 +173,11 @@ class SenderReceiverTest extends FlatSpec with PropertyChecks with Matchers with
   "combined counter AND timer sender test" should "be really awesome" in {
     val countLimit = 5
     val timeLimit = 5 seconds
-    val combinables: List[Combinable[WorkerOut[Double]]] =
+    val combinables: List[Combinable[WorkerToPS[Double]]] =
       List(CountClientSender(countLimit), TimerClientSender(timeLimit))
 
     // The counter and the timer condition should be met at the same time
-    def condition(combinables: List[Combinable[WorkerOut[Double]]]): Boolean = {
+    def condition(combinables: List[Combinable[WorkerToPS[Double]]]): Boolean = {
       combinables.map(_.shouldSend).reduce(_ && _)
     }
 

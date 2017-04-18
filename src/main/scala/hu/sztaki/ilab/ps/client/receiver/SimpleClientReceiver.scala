@@ -1,12 +1,13 @@
 package hu.sztaki.ilab.ps.client.receiver
 
 import hu.sztaki.ilab.ps.ClientReceiver
-import hu.sztaki.ilab.ps.entities.WorkerIn
+import hu.sztaki.ilab.ps.entities.{PSToWorker, PullAnswer}
 
-class SimpleClientReceiver[P] extends ClientReceiver[WorkerIn[P], P] {
+class SimpleClientReceiver[P] extends ClientReceiver[PSToWorker[P], P] {
 
-  override def onPullAnswerRecv(msg: WorkerIn[P], pullHandler: (Int, P) => Unit): Unit = {
-    pullHandler(msg.id, msg.msg)
-  }
+  override def onPullAnswerRecv(msg: PSToWorker[P], pullHandler: PullAnswer[P] => Unit): Unit =
+    msg match {
+      case PSToWorker(_, pullAns) => pullHandler(pullAns)
+    }
 
 }

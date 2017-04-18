@@ -1,6 +1,6 @@
 package hu.sztaki.ilab.ps
 
-import org.apache.flink.util.Collector
+import hu.sztaki.ilab.ps.entities.PullAnswer
 import org.apache.flink.streaming.api.scala._
 import org.scalatest._
 import prop._
@@ -60,8 +60,8 @@ class FlinkPSTest extends FlatSpec with PropertyChecks with Matchers {
 
         },
         new ClientReceiver[WorkerIn, P] {
-          override def onPullAnswerRecv(msg: WorkerIn, pullHandler: (Int, P) => Unit): Unit = {
-            pullHandler(msg._1, mutable.Queue(msg._2.tail.map(_.toInt): _*))
+          override def onPullAnswerRecv(msg: WorkerIn, pullHandler: PullAnswer[P] => Unit): Unit = {
+            pullHandler(PullAnswer(msg._1, mutable.Queue(msg._2.tail.map(_.toInt): _*)))
           }
         },
         new ClientSender[WorkerOut, P] {

@@ -4,7 +4,7 @@ import hu.sztaki.ilab.ps.FlinkPS._
 import hu.sztaki.ilab.ps.client.receiver.MultipleClientReceiver
 import hu.sztaki.ilab.ps.client.sender._
 import hu.sztaki.ilab.ps.common.Combinable
-import hu.sztaki.ilab.ps.entities.{WorkerIn, WorkerOut}
+import hu.sztaki.ilab.ps.entities.{PSToWorker, WorkerToPS}
 import hu.sztaki.ilab.ps.server.SimplePSLogic
 import hu.sztaki.ilab.ps.server.receiver.MultiplePSReceiver
 import hu.sztaki.ilab.ps.server.sender.{CombinationPSSender, CountPSSender, TimerPSSender}
@@ -54,19 +54,19 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
     val countLimit = 4
     val timeLimit = 1 seconds
 
-    val clientCombinables: List[Combinable[WorkerOut[P]]] =
+    val clientCombinables: List[Combinable[WorkerToPS[P]]] =
       List(CountClientSender(countLimit), TimerClientSender(timeLimit))
 
-    val serverCombinables: List[Combinable[WorkerIn[P]]] =
+    val serverCombinables: List[Combinable[PSToWorker[P]]] =
       List(CountPSSender(countLimit), TimerPSSender(timeLimit))
 
     // The counter AND the timer condition should be met at the same time before the client sends
-    def clientCondition(combinables: List[Combinable[WorkerOut[P]]]): Boolean = {
+    def clientCondition(combinables: List[Combinable[WorkerToPS[P]]]): Boolean = {
       combinables.map(_.shouldSend).reduce(_ && _)
     }
 
     // The counter OR the timer condition should be met before the server sends
-    def serverCondition(combinables: List[Combinable[WorkerIn[P]]]): Boolean = {
+    def serverCondition(combinables: List[Combinable[PSToWorker[P]]]): Boolean = {
       combinables.map(_.shouldSend).reduce(_ || _)
     }
 
@@ -114,13 +114,13 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
         new MultiplePSReceiver[P],
         combinoPSSender,
         // @todo proper partitioning, this is just a placeholder
-        (data: Array[WorkerOut[P]]) => {
-          data.head.partitionId
+        (data: Array[WorkerToPS[P]]) => {
+          data.head.workerPartitionIndex
         },
-        (data: Array[WorkerIn[P]]) => {
+        (data: Array[PSToWorker[P]]) => {
           data.length match {
             case 0 => 0
-            case _ => data.head.id % numberOfPartitions
+            case _ => data.head.workerPartitionIndex % numberOfPartitions
           }
         },
         4,

@@ -7,7 +7,7 @@ import hu.sztaki.ilab.ps.passive.aggressive.algorithm.RandomModelInitializer
 import hu.sztaki.ilab.ps.passive.aggressive.entities.{EOFSign, SparseVector}
 import hu.sztaki.ilab.ps.client.receiver.SimpleClientReceiver
 import hu.sztaki.ilab.ps.client.sender.SimpleClientSender
-import hu.sztaki.ilab.ps.entities.{WorkerIn, WorkerOut}
+import hu.sztaki.ilab.ps.entities.{PSToWorker, Pull, Push, WorkerToPS}
 import hu.sztaki.ilab.ps.passive.aggressive.algorithm.RandomModelInitializer
 import hu.sztaki.ilab.ps.passive.aggressive.algorithm.binary.PassiveAggressiveFilter
 import hu.sztaki.ilab.ps.server.SimplePSLogic
@@ -359,15 +359,15 @@ object PAMultiClassificationOffline {
     }
 
 
-    val paramPartitioner: WorkerOut[Double] => Int = {
-      case WorkerOut(partitionId, msg) => msg match {
-        case Left(paramId) => Math.abs(paramId) % psParallelism
-        case Right((paramId, delta)) => Math.abs(paramId) % psParallelism
+    val paramPartitioner: WorkerToPS[Double] => Int = {
+      case WorkerToPS(partitionId, msg) => msg match {
+        case Left(Pull(paramId)) => Math.abs(paramId) % psParallelism
+        case Right(Push(paramId, delta)) => Math.abs(paramId) % psParallelism
       }
     }
 
-    val wInPartition: WorkerIn[Double] => Int = {
-      case WorkerIn(id, workerPartitionIndex, msg) => workerPartitionIndex
+    val wInPartition: PSToWorker[Double] => Int = {
+      case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 
 

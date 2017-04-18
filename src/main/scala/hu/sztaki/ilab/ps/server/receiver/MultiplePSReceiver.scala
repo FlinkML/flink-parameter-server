@@ -1,29 +1,26 @@
 package hu.sztaki.ilab.ps.server.receiver
 
 import hu.sztaki.ilab.ps.PSReceiver
-import hu.sztaki.ilab.ps.entities.WorkerOut
+import hu.sztaki.ilab.ps.entities.{Pull, Push, WorkerToPS}
 
-class MultiplePSReceiver[P] extends PSReceiver[Array[WorkerOut[P]], P] {
+class MultiplePSReceiver[P] extends PSReceiver[Array[WorkerToPS[P]], P] {
 
-  override def onWorkerMsg(msg: Array[WorkerOut[P]],
+  override def onWorkerMsg(msg: Array[WorkerToPS[P]],
                            onPullRecv: (Int, Int) => Unit,
                            onPushRecv: (Int, P) => Unit): Unit = {
-    // @todo might not be optimal?
-    // @todo duplicate code from the simple version
-    msg.foreach(
-      out =>
-        out.msg match {
-          case Left(l) =>
-            // Passes key and partitionID
-            onPullRecv(l, out.partitionId)
-          case Right(r) =>
-            r match {
-              case (key, delta) => onPushRecv(key, delta)
-            }
+    msg.foreach {
+      wToPS =>
+        val workerPartition = wToPS.workerPartitionIndex
+        wToPS.msg match {
+          case Left(Pull(paramId)) =>
+            onPullRecv(paramId, workerPartition)
+          case Right(Push(paramId, delta)) =>
+            onPushRecv(paramId, delta)
           case _ =>
             throw new Exception("Parameter server received unknown message.")
         }
-    )
+    }
+
   }
 
 }
