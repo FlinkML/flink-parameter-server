@@ -10,7 +10,7 @@ import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
 import hu.sztaki.ilab.ps.entities._
 import hu.sztaki.ilab.ps.passive.aggressive.algorithm.RandomModelInitializer
 import hu.sztaki.ilab.ps.passive.aggressive.algorithm.binary.PassiveAggressiveFilter
-import hu.sztaki.ilab.ps.{FlinkPS, ParameterServerClient, WorkerLogic}
+import hu.sztaki.ilab.ps.{FlinkParameterServer, ParameterServerClient, WorkerLogic}
 import hu.sztaki.ilab.ps.server.SimplePSLogic
 import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
 import hu.sztaki.ilab.ps.server.sender.SimplePSSender
@@ -371,7 +371,7 @@ object PABinaryClassificationOffline {
     }
 
 
-    val modelUpdates = FlinkPS.parameterServerTransform(input, workerLogic, serverLogic,
+    val modelUpdates = FlinkParameterServer.parameterServerTransform(input, workerLogic, serverLogic,
       paramPartitioner = paramPartitioner,
       wInPartition = wInPartition,
       workerParallelism,

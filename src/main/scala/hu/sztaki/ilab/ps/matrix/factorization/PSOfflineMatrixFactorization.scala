@@ -10,7 +10,7 @@ import hu.sztaki.ilab.ps.matrix.factorization.Utils._
 import hu.sztaki.ilab.ps.server.SimplePSLogic
 import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
 import hu.sztaki.ilab.ps.server.sender.SimplePSSender
-import hu.sztaki.ilab.ps.{FlinkPS, ParameterServerClient, WorkerLogic}
+import hu.sztaki.ilab.ps.{FlinkParameterServer, ParameterServerClient, WorkerLogic}
 import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction}
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.util.Collector
@@ -295,7 +295,7 @@ object PSOfflineMatrixFactorization {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 
-    val modelUpdates = FlinkPS.parameterServerTransform(ratings, workerLogic2, serverLogic,
+    val modelUpdates = FlinkParameterServer.parameterServerTransform(ratings, workerLogic2, serverLogic,
       paramPartitioner = paramPartitioner,
       wInPartition = wInPartition,
       workerParallelism,

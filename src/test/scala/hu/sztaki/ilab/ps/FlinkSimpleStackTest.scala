@@ -3,7 +3,7 @@ package hu.sztaki.ilab.ps
 import org.apache.flink.streaming.api.scala._
 import org.scalatest._
 import prop._
-import hu.sztaki.ilab.ps.FlinkPS._
+import hu.sztaki.ilab.ps.FlinkParameterServer._
 import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
 import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
 import hu.sztaki.ilab.ps.entities.{PSToWorker, WorkerToPS}
