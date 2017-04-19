@@ -1,4 +1,4 @@
-name := "big-data-recom"
+name := "flink-ps"
 
 version := "0.1.0"
 
