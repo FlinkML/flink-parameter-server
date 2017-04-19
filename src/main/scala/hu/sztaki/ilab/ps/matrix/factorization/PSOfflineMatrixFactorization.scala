@@ -3,8 +3,8 @@ package hu.sztaki.ilab.ps.matrix.factorization
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.{Condition, ReentrantLock}
 
-import hu.sztaki.ilab.ps.client.receiver.SimpleClientReceiver
-import hu.sztaki.ilab.ps.client.sender.SimpleClientSender
+import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
+import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
 import hu.sztaki.ilab.ps.entities._
 import hu.sztaki.ilab.ps.matrix.factorization.Utils._
 import hu.sztaki.ilab.ps.server.SimplePSLogic
@@ -295,15 +295,15 @@ object PSOfflineMatrixFactorization {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 
-    val modelUpdates = FlinkPS.psTransform(ratings, workerLogic2, serverLogic,
-      new SimpleClientReceiver[Array[Double]](),
-      new SimpleClientSender[Array[Double]](),
-      new SimplePSReceiver[Array[Double]](),
-      new SimplePSSender[Array[Double]](),
+    val modelUpdates = FlinkPS.parameterServerTransform(ratings, workerLogic2, serverLogic,
       paramPartitioner = paramPartitioner,
       wInPartition = wInPartition,
       workerParallelism,
       psParallelism,
+      new SimpleWorkerReceiver[Array[Double]](),
+      new SimpleWorkerSender[Array[Double]](),
+      new SimplePSReceiver[Array[Double]](),
+      new SimplePSSender[Array[Double]](),
       iterationWaitTime)
 
     modelUpdates

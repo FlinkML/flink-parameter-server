@@ -5,8 +5,8 @@ import java.util.concurrent.locks.{Condition, ReentrantLock}
 
 import hu.sztaki.ilab.ps.passive.aggressive.algorithm.RandomModelInitializer
 import hu.sztaki.ilab.ps.passive.aggressive.entities.{EOFSign, SparseVector}
-import hu.sztaki.ilab.ps.client.receiver.SimpleClientReceiver
-import hu.sztaki.ilab.ps.client.sender.SimpleClientSender
+import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
+import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
 import hu.sztaki.ilab.ps.entities._
 import hu.sztaki.ilab.ps.passive.aggressive.algorithm.RandomModelInitializer
 import hu.sztaki.ilab.ps.passive.aggressive.algorithm.binary.PassiveAggressiveFilter
@@ -371,15 +371,15 @@ object PABinaryClassificationOffline {
     }
 
 
-    val modelUpdates = FlinkPS.psTransform(input, workerLogic, serverLogic,
-      new SimpleClientReceiver[Double](),
-      new SimpleClientSender[Double](),
-      new SimplePSReceiver[Double](),
-      new SimplePSSender[Double](),
+    val modelUpdates = FlinkPS.parameterServerTransform(input, workerLogic, serverLogic,
       paramPartitioner = paramPartitioner,
       wInPartition = wInPartition,
       workerParallelism,
       psParallelism,
+      new SimpleWorkerReceiver[Double](),
+      new SimpleWorkerSender[Double](),
+      new SimplePSReceiver[Double](),
+      new SimplePSSender[Double](),
       iterationWaitTime)
 //      .setParallelism(psParallelism)
 

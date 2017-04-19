@@ -39,7 +39,7 @@ class SenderReceiverTest extends FlatSpec with PropertyChecks with Matchers with
   }
 
   "simple client sender" should "work" in {
-    val sender = new SimpleClientSender[Double]
+    val sender = new SimpleWorkerSender[Double]
 
     val pullRange = 1 to 3
     val pushRange = 4 to 10
@@ -72,7 +72,7 @@ class SenderReceiverTest extends FlatSpec with PropertyChecks with Matchers with
       combinable.head.shouldSend()
     }
 
-    val sender = new CombinationClientSender[Double](condition, combinable)
+    val sender = new CombinationWorkerSender[Double](condition, combinable)
 
     for (i <- 1 to sendAfter - 1) {
       sender.onPull(i, arrayWorkerAction, i)
@@ -104,7 +104,7 @@ class SenderReceiverTest extends FlatSpec with PropertyChecks with Matchers with
       combinable.head.shouldSend()
     }
 
-    val sender = new CombinationClientSender[Double](condition, combinable)
+    val sender = new CombinationWorkerSender[Double](condition, combinable)
 
     sender.onPull(1, arrayWorkerAction, 1)
 
@@ -145,7 +145,7 @@ class SenderReceiverTest extends FlatSpec with PropertyChecks with Matchers with
       combinables.map(_.shouldSend()).reduce(_ || _)
     }
 
-    val combinoSender = new CombinationClientSender[Double](condition, combinables)
+    val combinoSender = new CombinationWorkerSender[Double](condition, combinables)
 
     for (i <- 1 to countLimit - 1) {
       combinoSender.onPush(i, i, arrayWorkerAction, i)
@@ -181,7 +181,7 @@ class SenderReceiverTest extends FlatSpec with PropertyChecks with Matchers with
       combinables.map(_.shouldSend).reduce(_ && _)
     }
 
-    val combinoSender = new CombinationClientSender[Double](condition, combinables)
+    val combinoSender = new CombinationWorkerSender[Double](condition, combinables)
 
     combinoSender.onPull(1, arrayWorkerAction, 1)
 
