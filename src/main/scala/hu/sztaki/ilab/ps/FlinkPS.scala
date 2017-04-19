@@ -3,20 +3,29 @@ package hu.sztaki.ilab.ps
 import hu.sztaki.ilab.ps.entities.PullAnswer
 import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction}
 import org.apache.flink.api.common.typeinfo.TypeInformation
+import org.apache.flink.configuration.Configuration
 import org.apache.flink.streaming.api.functions.co.RichCoFlatMapFunction
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.util.Collector
 import org.slf4j.LoggerFactory
 
-/* PS worker message flow */
-
-trait ParameterServerClient[P, WOut] extends Serializable {
+/**
+  * Client interface for the ParameterServer that the worker can use.
+  * This can be used in [[WorkerLogic]].
+  *
+  * @tparam P
+  * Type of the parametes.
+  * @tparam WorkerOut
+  * Type of the worker output.
+  */
+trait ParameterServerClient[P, WorkerOut] extends Serializable {
 
   def pull(id: Int): Unit
 
   def push(id: Int, deltaUpdate: P): Unit
 
-  def output(out: WOut): Unit
+  def output(out: WorkerOut): Unit
+
 }
 
 trait ClientReceiver[IN, P] extends Serializable {
@@ -36,25 +45,6 @@ trait WorkerLogic[T, P, WOut] extends Serializable {
   def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[P, WOut]): Unit
 
   def close(): Unit = ()
-}
-
-class MessagingPSClient[IN, OUT, P, WOut](sender: ClientSender[OUT, P],
-                                          partitionId: Int,
-                                          collector: Collector[Either[OUT, WOut]]) extends ParameterServerClient[P, WOut] {
-
-  def collectAnswerMsg(msg: OUT): Unit = {
-    collector.collect(Left(msg))
-  }
-
-  override def pull(id: Int): Unit =
-    sender.onPull(id, collectAnswerMsg, partitionId)
-
-  override def push(id: Int, deltaUpdate: P): Unit =
-    sender.onPush(id, deltaUpdate, collectAnswerMsg, partitionId)
-
-  override def output(out: WOut): Unit = {
-    collector.collect(Right(out))
-  }
 }
 
 /* PS message flow */
@@ -83,23 +73,6 @@ trait PSSender[PStoWorker, P] extends Serializable {
                    value: P,
                    workerPartitionIndex: Int,
                    collectAnswerMsg: PStoWorker => Unit)
-}
-
-class MessagingPS[WorkerIn, WorkerOut, P, PSOut](psSender: PSSender[WorkerIn, P],
-                                                 collector: Collector[Either[WorkerIn, PSOut]])
-  extends ParameterServer[P, PSOut] {
-
-  def collectAnswerMsg(msg: WorkerIn): Unit = {
-    collector.collect(Left(msg))
-  }
-
-  override def answerPull(id: Int, value: P, workerPartitionIndex: Int): Unit = {
-    psSender.onPullAnswer(id, value, workerPartitionIndex, collectAnswerMsg)
-  }
-
-  override def output(out: PSOut): Unit = {
-    collector.collect(Right(out))
-  }
 }
 
 class FlinkPS
@@ -139,15 +112,19 @@ object FlinkPS {
             val sender: ClientSender[WorkerToPS, P] = clientSender
             val logic: WorkerLogic[T, P, WOut] = workerLogic
 
+            val psClient =
+              new MessagingPSClient[PStoWorker, WorkerToPS, P, WOut](sender)
+
+
+            override def open(parameters: Configuration): Unit = {
+              psClient.setPartitionId(getRuntimeContext.getIndexOfThisSubtask)
+            }
+
             // incoming answer from PS
             override def flatMap2(msg: PStoWorker, out: Collector[Either[WorkerToPS, WOut]]): Unit = {
               log.debug(s"Pull answer: $msg")
-              // TODO avoid instantiating class at every new data point
-              val psClient =
-                new MessagingPSClient[PStoWorker, WorkerToPS, P, WOut](
-                  sender,
-                  getRuntimeContext.getIndexOfThisSubtask,
-                  out)
+
+              psClient.setCollector(out)
               receiver.onPullAnswerRecv(msg, {
                 case PullAnswer(id, value) => logic.onPullRecv(id, value, psClient)
               })
@@ -155,14 +132,9 @@ object FlinkPS {
 
             // incoming data
             override def flatMap1(data: T, out: Collector[Either[WorkerToPS, WOut]]): Unit = {
-              // TODO avoid instantiating class at every new data point
-              val psClient =
-                new MessagingPSClient[PStoWorker, WorkerToPS, P, WOut](
-                  sender,
-                  getRuntimeContext.getIndexOfThisSubtask,
-                  out)
-
               log.debug(s"Incoming data: $data")
+
+              psClient.setCollector(out)
               logic.onRecv(data, psClient)
             }
 
@@ -194,11 +166,12 @@ object FlinkPS {
           val receiver: PSReceiver[WorkerToPS, P] = psReceiver
           val sender: PSSender[PStoWorker, P] = psSender
 
+          val ps = new MessagingPS[PStoWorker, WorkerToPS, P, PSOut](sender)
+
           override def flatMap(msg: WorkerToPS, out: Collector[Either[PStoWorker, PSOut]]): Unit = {
             log.debug(s"Pull request or push msg @ PS: $msg")
 
-            // TODO avoid instantiating this class every time
-            val ps = new MessagingPS[PStoWorker, WorkerToPS, P, PSOut](sender, out)
+            ps.setCollector(out)
             receiver.onWorkerMsg(msg,
               (pullId, workerPartitionIndex) => logic.onPullRecv(pullId, workerPartitionIndex, ps), { case (pushId, deltaUpdate) => logic.onPushRecv(pushId, deltaUpdate, ps) }
             )
@@ -241,5 +214,57 @@ object FlinkPS {
       .setParallelism(workerParallelism)
       .iterate((x: ConnectedStreams[T, PStoWorker]) => stepFunc(x), iterationWaitTime)
   }
+
+  private class MessagingPS[WorkerIn, WorkerOut, P, PSOut](psSender: PSSender[WorkerIn, P])
+    extends ParameterServer[P, PSOut] {
+
+    private var collector: Collector[Either[WorkerIn, PSOut]] = _
+
+    def setCollector(out: Collector[Either[WorkerIn, PSOut]]): Unit = {
+      collector = out
+    }
+
+    def collectAnswerMsg(msg: WorkerIn): Unit = {
+      collector.collect(Left(msg))
+    }
+
+    override def answerPull(id: Int, value: P, workerPartitionIndex: Int): Unit = {
+      psSender.onPullAnswer(id, value, workerPartitionIndex, collectAnswerMsg)
+    }
+
+    override def output(out: PSOut): Unit = {
+      collector.collect(Right(out))
+    }
+  }
+
+  private class MessagingPSClient[IN, OUT, P, WOut](sender: ClientSender[OUT, P])
+    extends ParameterServerClient[P, WOut] {
+
+    private var collector: Collector[Either[OUT, WOut]] = _
+    private var partitionId: Int = -1
+
+    def setPartitionId(pId: Int): Unit = {
+      partitionId = pId
+    }
+
+    def setCollector(out: Collector[Either[OUT, WOut]]): Unit = {
+      collector = out
+    }
+
+    def collectPullMsg(msg: OUT): Unit = {
+      collector.collect(Left(msg))
+    }
+
+    override def pull(id: Int): Unit =
+      sender.onPull(id, collectPullMsg, partitionId)
+
+    override def push(id: Int, deltaUpdate: P): Unit =
+      sender.onPush(id, deltaUpdate, collectPullMsg, partitionId)
+
+    override def output(out: WOut): Unit = {
+      collector.collect(Right(out))
+    }
+  }
+
 }
 
