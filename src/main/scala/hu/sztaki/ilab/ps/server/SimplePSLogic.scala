@@ -18,7 +18,9 @@ class SimplePSLogic[P](paramInit: => Int => P, paramUpdate: => (P, P) => P) exte
       case Some(q) =>
         update(q, deltaUpdate)
       case None =>
-        throw new IllegalStateException("Not existed model was not able to update by any delta.")
+        throw new IllegalStateException(
+          "Parameter did not exist, was not able to update by any delta." +
+          " You should not push before pulling!")
     }
     params += ((id, c))
     ps.output((id, c))

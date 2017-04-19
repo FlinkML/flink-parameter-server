@@ -1,6 +1,7 @@
 package hu.sztaki.ilab.ps
 
 import hu.sztaki.ilab.ps.entities.PullAnswer
+import hu.sztaki.ilab.ps.server.SimplePSLogic
 import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction}
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.configuration.Configuration
@@ -9,143 +10,137 @@ import org.apache.flink.streaming.api.scala._
 import org.apache.flink.util.Collector
 import org.slf4j.LoggerFactory
 
-/**
-  * Client interface for the ParameterServer that the worker can use.
-  * This can be used in [[WorkerLogic]].
-  *
-  * @tparam P
-  * Type of parameters.
-  * @tparam WorkerOut
-  * Type of worker output.
-  */
-trait ParameterServerClient[P, WorkerOut] extends Serializable {
+class FlinkParameterServer
 
-  def pull(id: Int): Unit
+object FlinkParameterServer {
 
-  def push(id: Int, deltaUpdate: P): Unit
-
-  def output(out: WorkerOut): Unit
-
-}
-
-/**
-  * Logic of the worker, that stores and processes the data.
-  * To use the ParameterServer, this must be implemented.
-  *
-  * @tparam T
-  * Type of incoming data.
-  * @tparam P
-  * Type of parameters.
-  * @tparam WOut
-  * Type of worker output.
-  */
-trait WorkerLogic[T, P, WOut] extends Serializable {
+  private val log = LoggerFactory.getLogger(classOf[FlinkParameterServer])
 
   /**
-    * Method called when new data arrives.
+    * Applies a transformation to a [[DataStream]] that involves training with a ParameterServer.
     *
-    * @param data
-    * New data.
-    * @param ps
-    * Interface to ParameterServer.
-    */
-  def onRecv(data: T, ps: ParameterServerClient[P, WOut]): Unit
-
-  /**
-    * Method called when an answer arrives to a pull message.
-    * It contains the parameter.
+    * The ParameterServer logic simply stores parameters in a HashMap and emits the current values of
+    * the parameter at every update (see [[SimplePSLogic]]).
+    * However, the update mechanism and the parameter initialization should be defined.
+    * A parameter is initialized at its first pull, so there must be no pushes to a parameter before
+    * it got pulled first.
     *
-    * @param paramId
-    * Identifier of the received parameter.
-    * @param paramValue
-    * Value of the received parameter.
-    * @param ps
-    * Interface to ParameterServer.
-    */
-  def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[P, WOut]): Unit
-
-  /**
-    * Method called when processing is finished.
-    */
-  def close(): Unit = ()
-
-}
-
-
-/**
-  * Logic of the ParameterServer, that stores the parameters,
-  * applies pushes and answers pulls.
-  *
-  * This could be implemented if needed (e.g. for controlling the output of parameters),
-  * but it is not necessary to have a custom implementation.
-  * By default a [[hu.sztaki.ilab.ps.server.SimplePSLogic]] is used.
-  *
-  * @tparam P
-  * Type of parameters.
-  * @tparam PSOut
-  * Type of ParameterServer output.
-  */
-trait ParameterServerLogic[P, PSOut] extends Serializable {
-
-  /**
-    * Method called when a pull message arrives from a worker.
+    * Parameters are partitioned by the hash of their id.
     *
-    * @param id
-    * Identifier of parameter (e.g. it could be an index of a vector).
-    * @param workerPartitionIndex
-    * Index of the worker partition.
-    * @param ps
-    * Interface for answering pulls and creating output.
+    * @param trainingData
+    * [[DataStream]] containing the training data.
+    * @param workerLogic
+    * Logic of the worker that uses the ParameterServer for training.
+    * @param paramInit
+    * Function for initializing the parameters based on their id.
+    * @param paramUpdate
+    * Function for updating the parameters. Takes the old parameter value and a delta update.
+    * @param workerParallelism
+    * Number of parallel worker instances.
+    * @param psParallelism
+    * Number of parallel PS instances.
+    * @param iterationWaitTime
+    * Time to wait for new messages at worker. If set to 0, the job will run infinitely.
+    * PS is implemented with a Flink iteration, and Flink does not know when the iteration finishes,
+    * so this is how the job can finish.
+    * @tparam T
+    * Type of training data.
+    * @tparam P
+    * Type of parameter.
+    * @tparam WOut
+    * Type of output of workers.
+    * @return
+    * Transform [[DataStream]] consisting of the worker and PS output.
     */
-  def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[P, PSOut]): Unit
+  def parameterServerTransform[T, P, WOut](trainingData: DataStream[T],
+                                           workerLogic: WorkerLogic[T, P, WOut],
+                                           paramInit: => Int => P,
+                                           paramUpdate: => (P, P) => P,
+                                           workerParallelism: Int,
+                                           psParallelism: Int,
+                                           iterationWaitTime: Long
+                                          )
+                                          (implicit
+                                           tiT: TypeInformation[T],
+                                           tiP: TypeInformation[P],
+                                           tiWOut: TypeInformation[WOut]
+                                          ): DataStream[Either[WOut, (Int, P)]] = {
+    val psLogic = new SimplePSLogic[P](paramInit, paramUpdate)
+    parameterServerTransform(trainingData, workerLogic, psLogic,
+      workerParallelism, psParallelism, iterationWaitTime)
+  }
 
   /**
-    * Method called when a push message arrives from a worker.
+    * Applies a transformation to a [[DataStream]] that involves training with a ParameterServer.
+    * Parameters are partitioned by the hash of their id.
     *
-    * @param id
-    * Identifier of parameter (e.g. it could be an index of a vector).
-    * @param deltaUpdate
-    * Value to update the parameter (e.g. it could be added to the current value).
-    * @param ps
-    * Interface for answering pulls and creating output.
+    * @param trainingData
+    * [[DataStream]] containing the training data.
+    * @param workerLogic
+    * Logic of the worker that uses the ParameterServer for training.
+    * @param psLogic
+    * Logic of the ParameterServer that serves pulls and handles pushes.
+    * @param workerParallelism
+    * Number of parallel worker instances.
+    * @param psParallelism
+    * Number of parallel PS instances.
+    * @param iterationWaitTime
+    * Time to wait for new messages at worker. If set to 0, the job will run infinitely.
+    * PS is implemented with a Flink iteration, and Flink does not know when the iteration finishes,
+    * so this is how the job can finish.
+    * @tparam T
+    * Type of training data.
+    * @tparam P
+    * Type of parameter.
+    * @tparam PSOut
+    * Type of output of PS.
+    * @tparam WOut
+    * Type of output of workers.
+    * @return
+    * Transform [[DataStream]] consisting of the worker and PS output.
     */
-  def onPushRecv(id: Int, deltaUpdate: P, ps: ParameterServer[P, PSOut]): Unit
-}
+  def parameterServerTransform[T, P, PSOut, WOut](trainingData: DataStream[T],
+                                                  workerLogic: WorkerLogic[T, P, WOut],
+                                                  psLogic: ParameterServerLogic[P, PSOut],
+                                                  workerParallelism: Int,
+                                                  psParallelism: Int,
+                                                  iterationWaitTime: Long)
+                                                 (implicit
+                                                  tiT: TypeInformation[T],
+                                                  tiP: TypeInformation[P],
+                                                  tiPSOut: TypeInformation[PSOut],
+                                                  tiWOut: TypeInformation[WOut]
+                                                 ): DataStream[Either[WOut, PSOut]] = {
+    import hu.sztaki.ilab.ps.entities._
+    import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
+    import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
+    import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
+    import hu.sztaki.ilab.ps.server.sender.SimplePSSender
 
-trait ParameterServer[P, PSOut] extends Serializable {
-  def answerPull(id: Int, value: P, workerPartitionIndex: Int): Unit
+    val hashFunc: Any => Int = x => Math.abs(x.hashCode())
 
-  def output(out: PSOut): Unit
-}
+    val workerToPSPartitioner: WorkerToPS[P] => Int = {
+      case WorkerToPS(_, msg) =>
+        msg match {
+          case Left(Pull(pId)) => hashFunc(pId) % psParallelism
+          case Right(Push(pId, _)) => hashFunc(pId) % psParallelism
+        }
+    }
 
-trait PSReceiver[WorkerToPS, P] extends Serializable {
-  def onWorkerMsg(msg: WorkerToPS,
-                  onPullRecv: (Int, Int) => Unit,
-                  onPushRecv: (Int, P) => Unit)
-}
+    val psToWorkerPartitioner: PSToWorker[P] => Int = {
+      case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
+    }
 
-trait PSSender[PStoWorker, P] extends Serializable {
-  def onPullAnswer(id: Int,
-                   value: P,
-                   workerPartitionIndex: Int,
-                   collectAnswerMsg: PStoWorker => Unit)
-}
-
-trait WorkerReceiver[IN, P] extends Serializable {
-  def onPullAnswerRecv(msg: IN, pullHandler: PullAnswer[P] => Unit)
-}
-
-trait WorkerSender[OUT, P] extends Serializable {
-  def onPull(id: Int, collectAnswerMsg: OUT => Unit, partitionId: Int)
-
-  def onPush(id: Int, deltaUpdate: P, collectAnswerMsg: OUT => Unit, partitionId: Int)
-}
-
-class FlinkPS
-
-object FlinkPS {
-
-  private val log = LoggerFactory.getLogger(classOf[FlinkPS])
+    parameterServerTransform[T, P, PSOut, WOut, PSToWorker[P], WorkerToPS[P]](
+      trainingData,
+      workerLogic, psLogic,
+      workerToPSPartitioner, psToWorkerPartitioner,
+      workerParallelism, psParallelism,
+      new SimpleWorkerReceiver[P], new SimpleWorkerSender[P],
+      new SimplePSReceiver[P], new SimplePSSender[P],
+      iterationWaitTime
+    )
+  }
 
   /**
     * Applies a transformation to a [[DataStream]] that involves training with a ParameterServer.
@@ -166,7 +161,7 @@ object FlinkPS {
     * Number of parallel PS instances.
     * @param workerReceiver
     * Logic of forming the messages received at worker from PS to a pull answer.
-    * @param clientSender
+    * @param workerSender
     * Logic of wrapping the pulls and pushes into messages sent by worker to PS.
     * @param psReceiver
     * Logic of forming the messages received at PS from a worker to a pulls and pushes.
@@ -199,7 +194,7 @@ object FlinkPS {
                                                                           workerParallelism: Int,
                                                                           psParallelism: Int,
                                                                           workerReceiver: WorkerReceiver[PStoWorker, P],
-                                                                          clientSender: WorkerSender[WorkerToPS, P],
+                                                                          workerSender: WorkerSender[WorkerToPS, P],
                                                                           psReceiver: PSReceiver[WorkerToPS, P],
                                                                           psSender: PSSender[PStoWorker, P],
                                                                           iterationWaitTime: Long = 10000)
@@ -219,7 +214,7 @@ object FlinkPS {
           new RichCoFlatMapFunction[T, PStoWorker, Either[WorkerToPS, WOut]] {
 
             val receiver: WorkerReceiver[PStoWorker, P] = workerReceiver
-            val sender: WorkerSender[WorkerToPS, P] = clientSender
+            val sender: WorkerSender[WorkerToPS, P] = workerSender
             val logic: WorkerLogic[T, P, WOut] = workerLogic
 
             val psClient =
@@ -382,5 +377,107 @@ object FlinkPS {
     }
   }
 
+}
+
+
+/**
+  * Logic of the ParameterServer, that stores the parameters,
+  * applies pushes and answers pulls.
+  *
+  * This could be implemented if needed (e.g. for controlling the output of parameters),
+  * but it is not necessary to have a custom implementation.
+  * By default a [[hu.sztaki.ilab.ps.server.SimplePSLogic]] is used.
+  *
+  * @tparam P
+  * Type of parameters.
+  * @tparam PSOut
+  * Type of ParameterServer output.
+  */
+trait ParameterServerLogic[P, PSOut] extends Serializable {
+
+  /**
+    * Method called when a pull message arrives from a worker.
+    *
+    * @param id
+    * Identifier of parameter (e.g. it could be an index of a vector).
+    * @param workerPartitionIndex
+    * Index of the worker partition.
+    * @param ps
+    * Interface for answering pulls and creating output.
+    */
+  def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[P, PSOut]): Unit
+
+  /**
+    * Method called when a push message arrives from a worker.
+    *
+    * @param id
+    * Identifier of parameter (e.g. it could be an index of a vector).
+    * @param deltaUpdate
+    * Value to update the parameter (e.g. it could be added to the current value).
+    * @param ps
+    * Interface for answering pulls and creating output.
+    */
+  def onPushRecv(id: Int, deltaUpdate: P, ps: ParameterServer[P, PSOut]): Unit
+}
+
+trait ParameterServer[P, PSOut] extends Serializable {
+  def answerPull(id: Int, value: P, workerPartitionIndex: Int): Unit
+
+  def output(out: PSOut): Unit
+}
+
+/**
+  * Logic of forming the messages received at PS from a worker to a pulls and pushes.
+  *
+  * @tparam WorkerToPS
+  * Type of message from workers to PS.
+  * @tparam P
+  * Type of parameter.
+  */
+trait PSReceiver[WorkerToPS, P] extends Serializable {
+  def onWorkerMsg(msg: WorkerToPS,
+                  onPullRecv: (Int, Int) => Unit,
+                  onPushRecv: (Int, P) => Unit)
+}
+
+/**
+  * Logic of wrapping the pull answers into messages sent by PS to worker.
+  *
+  * @tparam PStoWorker
+  * Type of message from PS to workers.
+  * @tparam P
+  * Type of parameter.
+  */
+trait PSSender[PStoWorker, P] extends Serializable {
+  def onPullAnswer(id: Int,
+                   value: P,
+                   workerPartitionIndex: Int,
+                   collectAnswerMsg: PStoWorker => Unit)
+}
+
+/**
+  * Logic of forming the messages received at worker from PS to a pull answer.
+  *
+  * @tparam PStoWorker
+  * Type of message from PS to workers.
+  * @tparam P
+  * Type of parameter.
+  */
+trait WorkerReceiver[PStoWorker, P] extends Serializable {
+  def onPullAnswerRecv(msg: PStoWorker, pullHandler: PullAnswer[P] => Unit)
+}
+
+/**
+  * Logic of wrapping the pulls and pushes into messages sent by worker to PS.
+  *
+  * @tparam WorkerToPS
+  * Type of message from workers to PS.
+  * @tparam P
+  * Type of parameter.
+  */
+trait WorkerSender[WorkerToPS, P] extends Serializable {
+  def onPull(id: Int, collectAnswerMsg: WorkerToPS => Unit, partitionId: Int)
+
+  def onPush(id: Int, deltaUpdate: P, collectAnswerMsg: WorkerToPS => Unit, partitionId: Int)
 }
 

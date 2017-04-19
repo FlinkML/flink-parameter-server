@@ -1,6 +1,6 @@
 package hu.sztaki.ilab.ps
 
-import hu.sztaki.ilab.ps.FlinkPS._
+import hu.sztaki.ilab.ps.FlinkParameterServer._
 import hu.sztaki.ilab.ps.client.receiver.MultipleWorkerReceiver
 import hu.sztaki.ilab.ps.client.sender._
 import hu.sztaki.ilab.ps.common.Combinable

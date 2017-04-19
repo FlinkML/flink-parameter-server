@@ -7,9 +7,9 @@ import prop._
 
 import scala.collection.mutable
 
-class FlinkPSTest extends FlatSpec with PropertyChecks with Matchers {
+class FlinkParameterServerTest extends FlatSpec with PropertyChecks with Matchers {
 
-  import hu.sztaki.ilab.ps.FlinkPS._
+  import hu.sztaki.ilab.ps.FlinkParameterServer._
 
   "flink mock PS" should "work" in {
 
