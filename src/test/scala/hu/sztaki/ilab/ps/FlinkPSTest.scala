@@ -31,7 +31,7 @@ class FlinkPSTest extends FlatSpec with PropertyChecks with Matchers {
     type WOut = Unit
 
     val outputDS =
-      psTransform(src,
+      parameterServerTransform(src,
         new WorkerLogic[Int, P, WOut] {
           val dataQ = new mutable.Queue[Int]()
 
@@ -59,15 +59,23 @@ class FlinkPSTest extends FlatSpec with PropertyChecks with Matchers {
           }
 
         },
-        new ClientReceiver[WorkerIn, P] {
+        (x: (Boolean, Array[Int])) => x match {
+          case (true, Array(partitionId, id)) => Math.abs(id.hashCode())
+          case (false, Array(id, _*)) => Math.abs(id.hashCode())
+        },
+        (x: (Int, Array[String])) => x._2.head.toInt,
+        4,
+        4,
+        new WorkerReceiver[WorkerIn, P] {
           override def onPullAnswerRecv(msg: WorkerIn, pullHandler: PullAnswer[P] => Unit): Unit = {
             pullHandler(PullAnswer(msg._1, mutable.Queue(msg._2.tail.map(_.toInt): _*)))
           }
         },
-        new ClientSender[WorkerOut, P] {
+        new WorkerSender[WorkerOut, P] {
           override def onPull(id: Int, collectAnswerMsg: WorkerOut => Unit, partitionId: Int): Unit = {
             collectAnswerMsg((true, Array(partitionId, id)))
           }
+
           override def onPush(id: Int, deltaUpdate: P, collectAnswerMsg: WorkerOut => Unit, partitionId: Int): Unit = {
             collectAnswerMsg((false, Array(id, deltaUpdate: _*)))
           }
@@ -89,14 +97,7 @@ class FlinkPSTest extends FlatSpec with PropertyChecks with Matchers {
                                     collectAnswerMsg: ((Int, Array[String])) => Unit): Unit = {
             collectAnswerMsg((id, (workerPartitionIndex +: value).map(_.toString).toArray))
           }
-        },
-        (x: (Boolean, Array[Int])) => x match {
-          case (true, Array(partitionId, id)) => Math.abs(id.hashCode())
-          case (false, Array(id, _*)) => Math.abs(id.hashCode())
-        },
-        (x: (Int, Array[String])) => x._2.head.toInt,
-        4,
-        4
+        }
       )
 
     outputDS.print()

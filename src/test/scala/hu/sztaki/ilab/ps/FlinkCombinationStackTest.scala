@@ -1,7 +1,7 @@
 package hu.sztaki.ilab.ps
 
 import hu.sztaki.ilab.ps.FlinkPS._
-import hu.sztaki.ilab.ps.client.receiver.MultipleClientReceiver
+import hu.sztaki.ilab.ps.client.receiver.MultipleWorkerReceiver
 import hu.sztaki.ilab.ps.client.sender._
 import hu.sztaki.ilab.ps.common.Combinable
 import hu.sztaki.ilab.ps.entities.{PSToWorker, WorkerToPS}
@@ -16,7 +16,7 @@ import org.scalatest.{FlatSpec, Matchers}
 import scala.collection.mutable
 import scala.concurrent.duration._
 
-class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matchers  {
+class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matchers {
 
   "flink combined count and timer worker and PS communication" should "work" in {
 
@@ -40,7 +40,7 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
     }
 
     val src = env.fromCollection(Seq[(Int, Array[Double])](
-      (1 ,Array[Double](1.5, 5.3, 1.3, 5.6, 7.9)),
+      (1, Array[Double](1.5, 5.3, 1.3, 5.6, 7.9)),
       (2, Array[Double](0.1, 0.1, 0.1, 0.1, 0.1)),
       (2, Array[Double](10.1, 10.2, 10.3, 10.4, 10.5)),
       (3, Array[Double](20.5, 26.3, 28.1, 29.2, 29.7)),
@@ -70,7 +70,7 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
       combinables.map(_.shouldSend).reduce(_ || _)
     }
 
-    val combinoClientSender = new CombinationClientSender[P](clientCondition, clientCombinables)
+    val combinoClientSender = new CombinationWorkerSender[P](clientCondition, clientCombinables)
     val combinoPSSender = new CombinationPSSender[P](serverCondition, serverCombinables)
 
     def initPS(id: Int): P = {
@@ -85,7 +85,7 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
     }
 
     val outputDS =
-      psTransform(
+      parameterServerTransform(
         // @todo add real source
         src,
         // @todo add real worker logic
@@ -109,10 +109,6 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
           }
         },
         new SimplePSLogic[P](initPS, updatePS),
-        new MultipleClientReceiver[P],
-        combinoClientSender,
-        new MultiplePSReceiver[P],
-        combinoPSSender,
         // @todo proper partitioning, this is just a placeholder
         (data: Array[WorkerToPS[P]]) => {
           data.head.workerPartitionIndex
@@ -124,7 +120,11 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
           }
         },
         4,
-        4
+        4,
+        new MultipleWorkerReceiver[P],
+        combinoClientSender,
+        new MultiplePSReceiver[P],
+        combinoPSSender
       )
 
     outputDS.map(
