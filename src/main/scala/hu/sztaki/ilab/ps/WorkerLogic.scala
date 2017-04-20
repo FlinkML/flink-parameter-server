@@ -48,6 +48,78 @@ trait WorkerLogic[T, P, WOut] extends Serializable {
 
 }
 
+object WorkerLogic {
+
+  /**
+    * Adds a pull limiter to a [[WorkerLogic]].
+    * If a worker tries to send more pulls than the pull limit, it
+    *
+    * @param workerLogic
+    * User defined [[WorkerLogic]]
+    * @param pullLimit
+    * Limit of unanswered pulls at a worker instance.
+    * @tparam T
+    * Type of training data.
+    * @tparam P
+    * Type of parameters.
+    * @tparam WOut
+    * Type of worker output.
+    * @return
+    * [[WorkerLogic]] that limits pulls.
+    */
+  def addPullLimiter[T, P, WOut](workerLogic: WorkerLogic[T, P, WOut],
+                                 pullLimit: Int): WorkerLogic[T, P, WOut] = {
+    new WorkerLogic[T, P, WOut] {
+
+      private var pullCounter = 0
+      private val pullQueue = mutable.Queue[Int]()
+
+      val wrappedPS = new ParameterServerClient[P, WOut] {
+
+        private var ps: ParameterServerClient[P, WOut] = _
+
+        def setPS(ps: ParameterServerClient[P, WOut]): Unit = {
+          this.ps = ps
+        }
+
+        override def pull(id: Int): Unit = {
+          if (pullCounter < pullLimit) {
+            pullCounter += 1
+            ps.pull(id)
+          } else {
+            pullQueue.enqueue(id)
+          }
+        }
+
+        override def push(id: Int, deltaUpdate: P): Unit = {
+          ps.push(id, deltaUpdate)
+        }
+
+        override def output(out: WOut): Unit = {
+          ps.output(out)
+        }
+      }
+
+      override def onRecv(data: T, ps: ParameterServerClient[P, WOut]): Unit = {
+        wrappedPS.setPS(ps)
+        workerLogic.onRecv(data, wrappedPS)
+      }
+
+      override def onPullRecv(paramId: Int,
+                              paramValue: P,
+                              ps: ParameterServerClient[P, WOut]): Unit = {
+        wrappedPS.setPS(ps)
+        workerLogic.onPullRecv(paramId, paramValue, wrappedPS)
+        pullCounter -= 1
+        if (pullQueue.nonEmpty) {
+          wrappedPS.pull(pullQueue.dequeue())
+        }
+      }
+    }
+  }
+
+}
+
 /**
   * Somewhat simplified worker logic with pulls returning [[Future]].
   *
