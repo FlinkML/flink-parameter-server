@@ -7,6 +7,7 @@ import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
 import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
 import hu.sztaki.ilab.ps.entities._
 import hu.sztaki.ilab.ps.matrix.factorization.Utils._
+import hu.sztaki.ilab.ps.matrix.factorization.factors.{FactorInitializer, RandomFactorInitializerDescriptor, SGDUpdater}
 import hu.sztaki.ilab.ps.server.SimplePSLogic
 import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
 import hu.sztaki.ilab.ps.server.sender.SimplePSSender
