@@ -80,107 +80,6 @@ object PSOfflineMatrixFactorization {
 
     val workerLogic = new WorkerLogic[Rating, Vector, (UserId, Vector)] {
 
-      val userVectors = new mutable.HashMap[UserId, Vector]()
-      // we store ratings by items, so that we can apply updates for all relevant users at a pull answer
-      val itemRatings = new mutable.HashMap[ItemId, ArrayBuffer[(UserId, Double)]]()
-
-      @transient
-      lazy val factorInit: FactorInitializer = factorInitDesc.open()
-
-      // todo gracefully stop thread at end of computation (override close method)
-      var workerThread: Thread = null
-
-      // We need to check if all threads finished already
-      val EOFsReceived = new AtomicInteger(0)
-
-      var pullCounter = 0
-      val psLock = new ReentrantLock()
-      val canPull: Condition = psLock.newCondition()
-
-      override def onRecv(data: Rating,
-                          ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
-
-        data match {
-          case (workerId, minusSourceId, -1.0) =>
-            log.info(s"Received EOF @$workerId from ${-minusSourceId}")
-            EOFsReceived.getAndIncrement()
-            // Start working when all the threads finished reading.
-            if (EOFsReceived.get() >= readParallelism) {
-              // This marks the end of input. We can do the work.
-              log.info(s"Number of received ratings: ${itemRatings.values.map(_.length).sum}")
-
-              // We start a new Thread to avoid blocking the answers to pulls.
-              // Otherwise the work would only start when all the pulls are sent (for all iterations).
-              workerThread = new Thread(new Runnable {
-                override def run(): Unit = {
-                  log.debug("worker thread started")
-                  for (iter <- 1 to iterations) {
-                    for (item <- itemRatings.keys) {
-                      // we assume that the PS client is not thread safe, so we need to sync when we use it.
-                      psLock.lock()
-                      try {
-                        while (pullCounter >= pullLimit) {
-                          canPull.await()
-                        }
-                        pullCounter += 1
-                        log.debug(s"pull inc: $pullCounter")
-
-                        ps.pull(item)
-                      } finally {
-                        psLock.unlock()
-                      }
-                    }
-                  }
-                  log.debug("pulls finished")
-                }
-              })
-              workerThread.start()
-            }
-          case rating
-            @(u, i, r) =>
-            // Since the EOF signals likely won't arrive at the same time, an extra check for the finished sources is needed.
-            // todo maybe use assert instead?
-            if (workerThread != null) {
-              throw new IllegalStateException("Should not have started worker thread while waiting for further " +
-                "elements.")
-            }
-
-            val buffer = itemRatings.getOrElseUpdate(i, new ArrayBuffer[(UserId, Double)]())
-            buffer.append((u, r))
-        }
-      }
-
-      override def onPullRecv(item: ItemId,
-                              itemVec: Vector,
-                              ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
-        // we assume that the PS client is not thread safe, so we need to sync when we use it.
-        psLock.lock()
-        try {
-          // todo shuffle or not?
-          for ((user, rating) <- Random.shuffle(itemRatings(item))) {
-            val userVec = userVectors.getOrElseUpdate(user, factorInit.nextFactor(user))
-            val (deltaUserVec, deltaItemVec) = factorUpdate.delta(rating, userVec, itemVec)
-            userVectors(user) = userVec.zip(deltaUserVec).map(x => x._1 + x._2)
-            ps.push(item, deltaItemVec)
-          }
-          pullCounter -= 1
-          canPull.signal()
-          log.debug(s"pull dec: $pullCounter")
-        } finally {
-          psLock.unlock()
-        }
-      }
-
-      override def close(): Unit = {
-        userVectors.foreach {
-          case (id: Int, vector: Array[Double]) =>
-            log.info(s"###PS###u;${id};[${vector.mkString(",")}]")
-        }
-      }
-    }
-
-    val workerLogic2 = new WorkerLogic[Rating, Vector, (UserId, Vector)] {
-
       val rs = new ArrayBuffer[Rating]()
       val userVectors = new mutable.HashMap[UserId, Vector]()
       val itemRatings = new mutable.HashMap[ItemId, mutable.Queue[(UserId, Double)]]()
@@ -296,7 +195,7 @@ object PSOfflineMatrixFactorization {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 
-    val modelUpdates = FlinkParameterServer.parameterServerTransform(ratings, workerLogic2, serverLogic,
+    val modelUpdates = FlinkParameterServer.parameterServerTransform(ratings, workerLogic, serverLogic,
       paramPartitioner = paramPartitioner,
       wInPartition = wInPartition,
       workerParallelism,
