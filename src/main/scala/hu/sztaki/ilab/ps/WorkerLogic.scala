@@ -1,5 +1,7 @@
 package hu.sztaki.ilab.ps
 
+import java.util.concurrent.locks.{Condition, ReentrantLock}
+
 import scala.collection.mutable
 import scala.concurrent.{CanAwait, ExecutionContext, Future}
 import scala.concurrent.duration.Duration
@@ -52,7 +54,104 @@ object WorkerLogic {
 
   /**
     * Adds a pull limiter to a [[WorkerLogic]].
-    * If a worker tries to send more pulls than the pull limit, it
+    * If there are more unanswered pulls by a worker than the pull limit,
+    * the pulling is blocked until pull answers arrive.
+    *
+    * Thus, worker must do the pulling in another thread in order to avoid deadlock.
+    *
+    * @param workerLogic
+    * User defined [[WorkerLogic]]
+    * @param pullLimit
+    * Limit of unanswered pulls at a worker instance.
+    * @tparam T
+    * Type of training data.
+    * @tparam P
+    * Type of parameters.
+    * @tparam WOut
+    * Type of worker output.
+    * @return
+    * [[WorkerLogic]] that limits pulls.
+    */
+  def addBlockingPullLimiter[T, P, WOut](workerLogic: WorkerLogic[T, P, WOut],
+                                         pullLimit: Int): WorkerLogic[T, P, WOut] = {
+    new WorkerLogic[T, P, WOut] {
+
+      private var pullCounter = 0
+
+      val psLock = new ReentrantLock()
+      val canPull: Condition = psLock.newCondition()
+
+      val wrappedPS = new ParameterServerClient[P, WOut] {
+
+        private var ps: ParameterServerClient[P, WOut] = _
+
+        def setPS(ps: ParameterServerClient[P, WOut]): Unit = {
+          psLock.lock()
+          try {
+            this.ps = ps
+          } finally {
+            psLock.unlock()
+          }
+        }
+
+        override def pull(id: Int): Unit = {
+          psLock.lock()
+          try {
+            while (pullCounter >= pullLimit) {
+              canPull.await()
+            }
+
+            pullCounter += 1
+            ps.pull(id)
+          } finally {
+            psLock.unlock()
+          }
+        }
+
+        override def push(id: Int, deltaUpdate: P): Unit = {
+          psLock.lock()
+          try {
+            ps.push(id, deltaUpdate)
+          } finally {
+            psLock.unlock()
+          }
+        }
+
+        override def output(out: WOut): Unit = {
+          psLock.lock()
+          try {
+            ps.output(out)
+          } finally {
+            psLock.unlock()
+          }
+        }
+      }
+
+      override def onRecv(data: T, ps: ParameterServerClient[P, WOut]): Unit = {
+        wrappedPS.setPS(ps)
+        workerLogic.onRecv(data, wrappedPS)
+      }
+
+      override def onPullRecv(paramId: Int,
+                              paramValue: P,
+                              ps: ParameterServerClient[P, WOut]): Unit = {
+        wrappedPS.setPS(ps)
+        workerLogic.onPullRecv(paramId, paramValue, wrappedPS)
+        psLock.lock()
+        try {
+          pullCounter -= 1
+          canPull.signal()
+        } finally {
+          psLock.unlock()
+        }
+      }
+    }
+  }
+
+  /**
+    * Adds a pull limiter to a [[WorkerLogic]].
+    * If there are more unanswered pulls by a worker than the pull limit,
+    * the pulls get buffered until pull answers arrive.
     *
     * @param workerLogic
     * User defined [[WorkerLogic]]
