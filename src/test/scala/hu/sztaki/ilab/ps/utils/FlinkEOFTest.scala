@@ -5,9 +5,10 @@ import org.apache.flink.streaming.api.functions.source.{RichParallelSourceFuncti
 import org.apache.flink.streaming.api.scala._
 import org.scalatest.{FlatSpec, Matchers}
 import FlinkEOF._
-import org.apache.flink.runtime.client.JobExecutionException
 import org.apache.flink.streaming.api.functions.sink.SinkFunction
 import org.apache.flink.util.Collector
+
+import hu.sztaki.ilab.ps.test.utils.FlinkTestUtils._
 
 import scala.util.matching.Regex
 
@@ -77,7 +78,7 @@ object FlinkEOFTest {
           if (sum != expectedSum) {
             throw new AssertionError(s"Expected sum $expectedSum but got $sum.")
           } else {
-            throw Success(sum)
+            throw SuccessException[Int](sum)
           }
         } else if (cnt > flatMapParallelism) {
           throw new AssertionError(s"Should not have received more strings than $flatMapParallelism.")
@@ -86,7 +87,6 @@ object FlinkEOFTest {
         throw new AssertionError(s"Unexpected string without EOF pattern: $other")
     }
   }
-  case class Success(i: Int) extends Exception
 }
 
 class FlinkEOFTest extends FlatSpec with Matchers {
@@ -96,7 +96,6 @@ class FlinkEOFTest extends FlatSpec with Matchers {
     import FlinkEOFTest._
 
     val env = StreamExecutionEnvironment.getExecutionEnvironment
-
 
     val src =
       env.addSource(srcFunc).setParallelism(srcParallelism)
@@ -110,14 +109,6 @@ class FlinkEOFTest extends FlatSpec with Matchers {
 
     mapped.addSink(sinkFunc).setParallelism(1)
 
-    try {
-      env.execute()
-    } catch {
-      case e: JobExecutionException => e.getCause match {
-        case Success(i) => ()
-        case otherCause => throw e
-      }
-      case e: Throwable => throw e
-    }
+    executeWithSuccessCheck[Int](env)(_ => ())
   }
 }
