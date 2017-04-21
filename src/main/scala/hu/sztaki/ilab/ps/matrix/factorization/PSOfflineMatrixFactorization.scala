@@ -1,16 +1,7 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.locks.{Condition, ReentrantLock}
-
-import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
-import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
-import hu.sztaki.ilab.ps.entities._
 import hu.sztaki.ilab.ps.matrix.factorization.Utils._
 import hu.sztaki.ilab.ps.matrix.factorization.factors.{FactorInitializer, RandomFactorInitializerDescriptor, SGDUpdater}
-import hu.sztaki.ilab.ps.server.SimplePSLogic
-import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
-import hu.sztaki.ilab.ps.server.sender.SimplePSSender
 import hu.sztaki.ilab.ps.{FlinkParameterServer, ParameterServerClient, WorkerLogic}
 import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction}
 import org.apache.flink.streaming.api.scala._
@@ -34,6 +25,8 @@ object PSOfflineMatrixFactorization {
 
   private val log = LoggerFactory.getLogger(classOf[PSOfflineMatrixFactorization])
 
+  case class EOF() extends Serializable
+
   // A user rates an item with a Double rating
   type Rating = (UserId, ItemId, Double)
   type Vector = Array[Double]
@@ -49,28 +42,24 @@ object PSOfflineMatrixFactorization {
 
     val readParallelism = src.parallelism
 
-    val ratings = src
-      .flatMap(new RichFlatMapFunction[Rating, Rating] {
+    import hu.sztaki.ilab.ps.utils.FlinkEOF._
 
-        var collector: Option[Collector[Rating]] = None
-
-        override def flatMap(rating: Rating, out: Collector[Rating]): Unit = {
-          collector = Some(out)
-          out.collect(rating)
+    val ratings: DataStream[Either[EOF, Rating]] = flatMapWithEOF(src,
+      new RichFlatMapFunction[Rating, Either[EOF, Rating]] with EOFHandler[Either[EOF, Rating]] {
+        override def flatMap(value: (UserId, ItemId, Double), out: Collector[Either[EOF, (UserId, ItemId, Double)]]): Unit = {
+          out.collect(Right(value))
         }
 
-        override def close(): Unit = {
-          collector match {
-            case Some(c: Collector[Rating]) =>
-              for (i <- 0 until workerParallelism)
-                c.collect((i, -getRuntimeContext.getIndexOfThisSubtask, -1.0))
-            case _ => log.error("Nothing to collect from the source, quite tragic.")
-          }
+        override def onEOF(collector: Collector[Either[EOF, (UserId, ItemId, Double)]]): Unit = {
+          collector.collect(Left(EOF()))
         }
-      }).setParallelism(readParallelism)
-      .partitionCustom(new Partitioner[UserId] {
+      },
+      workerParallelism,
+      new Partitioner[UserId] {
         override def partition(key: UserId, numPartitions: Int): Int = key % numPartitions
-      }, x => x._1)
+      },
+      (x: Rating) => x._1
+    )
 
     // initialization method and update method
     val factorInitDesc = RandomFactorInitializerDescriptor(numFactors)
@@ -78,10 +67,11 @@ object PSOfflineMatrixFactorization {
     // fixme add lambda
     val factorUpdate = new SGDUpdater(learningRate)
 
-    val workerLogicBase = new WorkerLogic[Rating, Vector, (UserId, Vector)] {
+    val workerLogicBase = new WorkerLogic[Either[EOF, Rating], Vector, (UserId, Vector)] {
 
       val rs = new ArrayBuffer[Rating]()
       val userVectors = new mutable.HashMap[UserId, Vector]()
+
       val itemRatings = new mutable.HashMap[ItemId, mutable.Queue[(UserId, Double)]]()
 
       @transient
@@ -93,56 +83,53 @@ object PSOfflineMatrixFactorization {
       // We need to check if all threads finished already
       var EOFsReceived = 0
 
-      override def onRecv(data: Rating,
+      override def onRecv(value: Either[EOF, Rating],
                           ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
 
-        data match {
-          case (workerId, minusSourceId, -1.0) =>
-            log.info(s"Received EOF @$workerId from ${-minusSourceId}")
-            EOFsReceived += 1
-            // Start working when all the threads finished reading.
-            if (EOFsReceived >= readParallelism) {
-              // This marks the end of input. We can do the work.
-              log.info(s"Number of received ratings: ${rs.length}")
-
-              // We start a new Thread to avoid blocking the answers to pulls.
-              // Otherwise the work would only start when all the pulls are sent (for all iterations).
-              workerThread = new Thread(new Runnable {
-                override def run(): Unit = {
-                  log.debug("worker thread started")
-                  for (iter <- 1 to iterations) {
-                    Random.shuffle(rs)
-                    for ((u, i, r) <- rs) {
-                      // we assume that the PS client is not thread safe, so we need to sync when we use it.
-                      itemRatings.getOrElseUpdate(i, mutable.Queue[(UserId, Double)]())
-                        .enqueue((u, r))
-
-                      // we assume that the PS client is thread safe, so we can use it from different threads
-                      ps.pull(i)
-                    }
-                  }
-                  log.debug("pulls finished")
-                }
-              })
-              workerThread.start()
-            }
-          case rating
-            @(u, i, r) =>
-            // Since the EOF signals likely won't arrive at the same time, an extra check for the finished sources is needed.
-            // todo maybe use assert instead?
+        value match {
+          case Right(rating) =>
             if (workerThread != null) {
               throw new IllegalStateException("Should not have started worker thread while waiting for further " +
                 "elements.")
             }
 
-            rs.append((u, i, r))
+            rs.append(rating)
+          case Left(EOF()) =>
+            // This marks the end of input. We can do the work.
+            log.info(s"Number of received ratings: ${rs.length}")
+
+            // We start a new Thread to avoid blocking the answers to pulls.
+            // Otherwise the work would only start when all the pulls are sent (for all iterations).
+            workerThread = new Thread(new Runnable {
+              override def run(): Unit = {
+                log.debug("worker thread started")
+                for (iter <- 1 to iterations) {
+                  Random.shuffle(rs)
+                  for ((u, i, r) <- rs) {
+                    // to avoid concurrent modification of the stored ratings
+                    itemRatings synchronized {
+                      itemRatings.getOrElseUpdate(i, mutable.Queue[(UserId, Double)]()).enqueue((u, r))
+                    }
+
+                    // we assume that the PS client is thread safe, so we can use it from different threads
+                    ps.pull(i)
+                  }
+                }
+                log.debug("pulls finished")
+              }
+            })
+            workerThread.start()
         }
       }
 
       override def onPullRecv(item: ItemId,
                               itemVec: Vector,
                               ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
-        val (user, rating) = itemRatings(item).dequeue()
+        // to avoid concurrent modification of the stored ratings
+        val (user, rating) = itemRatings synchronized {
+          itemRatings(item).dequeue()
+        }
+
         val userVec = userVectors.getOrElseUpdate(user, factorInit.nextFactor(user))
         val (deltaUserVec, deltaItemVec) = factorUpdate.delta(rating, userVec, itemVec)
         userVectors(user) = userVec.zip(deltaUserVec).map(x => x._1 + x._2)
@@ -156,33 +143,20 @@ object PSOfflineMatrixFactorization {
       }
     }
 
-    val workerLogic: WorkerLogic[Rating, Vector, (UserId, Vector)] =
+    val workerLogic: WorkerLogic[Either[EOF, Rating], Vector, (UserId, Vector)] =
       WorkerLogic.addBlockingPullLimiter(workerLogicBase, pullLimit)
 
-    val serverLogic =
-      new SimplePSLogic[Array[Double]](
-        x => factorInitDesc.open().nextFactor(x), { case (vec, deltaVec) => vec.zip(deltaVec).map(x => x._1 + x._2) })
-
-    val paramPartitioner: WorkerToPS[Array[Double]] => Int = {
-      case WorkerToPS(partitionId, msg) => msg match {
-        case Left(Pull(paramId)) => Math.abs(paramId) % psParallelism
-        case Right(Push(paramId, delta)) => Math.abs(paramId) % psParallelism
-      }
+    val paramInit = (id: Int) => factorInitDesc.open().nextFactor(id)
+    val paramUpdate: (Vector, Vector) => Vector = {
+      case (vec, deltaVec) => vec.zip(deltaVec).map(x => x._1 + x._2)
     }
 
-    val wInPartition: PSToWorker[Array[Double]] => Int = {
-      case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
-    }
-
-    val modelUpdates = FlinkParameterServer.parameterServerTransform(ratings, workerLogic, serverLogic,
-      paramPartitioner = paramPartitioner,
-      wInPartition = wInPartition,
+    val modelUpdates = FlinkParameterServer.parameterServerTransform(
+      ratings,
+      workerLogic,
+      paramInit, paramUpdate,
       workerParallelism,
       psParallelism,
-      new SimpleWorkerReceiver[Array[Double]](),
-      new SimpleWorkerSender[Array[Double]](),
-      new SimplePSReceiver[Array[Double]](),
-      new SimplePSSender[Array[Double]](),
       iterationWaitTime)
 
     modelUpdates

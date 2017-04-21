@@ -100,7 +100,7 @@ class FlinkEOFTest extends FlatSpec with Matchers {
     val src =
       env.addSource(srcFunc).setParallelism(srcParallelism)
 
-    val mapped =
+    val mapped: DataStream[String] =
       FlinkEOF.flatMapWithEOF(src, flatMapFunc, flatMapParallelism, new Partitioner[Int] {
         override def partition(key: Int, numPartitions: Int): Int = {
           key % numPartitions

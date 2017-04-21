@@ -68,15 +68,17 @@ object FlinkEOF {
     * @return
     * Output [[DataStream]] of the applied user defined [[RichFlatMapFunction]].
     */
-  def flatMapWithEOF[IN, OUT, K](in: DataStream[IN],
-                                 flatMapFunction: RichFlatMapFunction[IN, OUT] with EOFHandler[OUT],
-                                 // todo use broadcast to avoid defining explicit parallelism and partitioner
-                                 downstreamParallelism: Int,
-                                 partitioner: Partitioner[K],
-                                 partitionerFunc: IN => K)
-                                (implicit inTI: TypeInformation[IN],
-                                 outTI: TypeInformation[OUT],
-                                 kTI: TypeInformation[K]): DataStream[OUT] = {
+  def flatMapWithEOF[IN, OUT, K,
+  FlatMapFunc <: RichFlatMapFunction[IN, OUT]
+    with EOFHandler[OUT]](in: DataStream[IN],
+                          flatMapFunction: FlatMapFunc,
+                          // todo use broadcast to avoid defining explicit parallelism and partitioner
+                          downstreamParallelism: Int,
+                          partitioner: Partitioner[K],
+                          partitionerFunc: IN => K)
+                         (implicit inTI: TypeInformation[IN],
+                          outTI: TypeInformation[OUT],
+                          kTI: TypeInformation[K]): DataStream[OUT] = {
 
     val keyExtractor: Either[EOF, IN] => Either[EOF, K] = {
       case Left(eof) => Left(eof)
@@ -114,7 +116,9 @@ object FlinkEOF {
           }
         }
       }, keyExtractor)
-      .flatMap(new RichFlatMapWrapper[IN, OUT](in.parallelism, flatMapFunction)).setParallelism(downstreamParallelism)
+      .flatMap(new RichFlatMapWrapper[IN, OUT](in.parallelism, flatMapFunction))
+      .setParallelism(downstreamParallelism)
+      .forward
   }
 
 }
