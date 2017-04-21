@@ -72,8 +72,8 @@ object WorkerLogic {
     * @return
     * [[WorkerLogic]] that limits pulls.
     */
-  def addBlockingPullLimiter[T, P, WOut](workerLogic: WorkerLogic[T, P, WOut],
-                                         pullLimit: Int): WorkerLogic[T, P, WOut] = {
+  def addBlockingPullLimiter[T, P, WOut, WLogic <: WorkerLogic[T, P, WOut]](workerLogic: WLogic,
+                                                                            pullLimit: Int): WorkerLogic[T, P, WOut] = {
     new WorkerLogic[T, P, WOut] {
 
       private var pullCounter = 0

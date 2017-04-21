@@ -42,7 +42,7 @@ object PSOfflineMatrixFactorization {
                   numFactors: Int,
                   learningRate: Double,
                   iterations: Int,
-                  pullLimit: Long,
+                  pullLimit: Int,
                   workerParallelism: Int,
                   psParallelism: Int,
                   iterationWaitTime: Long): DataStream[Either[(UserId, Vector), (ItemId, Vector)]] = {
@@ -78,7 +78,7 @@ object PSOfflineMatrixFactorization {
     // fixme add lambda
     val factorUpdate = new SGDUpdater(learningRate)
 
-    val workerLogic = new WorkerLogic[Rating, Vector, (UserId, Vector)] {
+    val workerLogicBase = new WorkerLogic[Rating, Vector, (UserId, Vector)] {
 
       val rs = new ArrayBuffer[Rating]()
       val userVectors = new mutable.HashMap[UserId, Vector]()
@@ -91,12 +91,7 @@ object PSOfflineMatrixFactorization {
       var workerThread: Thread = null
 
       // We need to check if all threads finished already
-      //        val EOFsReceived = new AtomicInteger(0)
       var EOFsReceived = 0
-
-      var pullCounter = 0
-      val psLock = new ReentrantLock()
-      val canPull: Condition = psLock.newCondition()
 
       override def onRecv(data: Rating,
                           ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
@@ -119,22 +114,11 @@ object PSOfflineMatrixFactorization {
                     Random.shuffle(rs)
                     for ((u, i, r) <- rs) {
                       // we assume that the PS client is not thread safe, so we need to sync when we use it.
-                      psLock.lock()
-                      try {
-                        while (pullCounter >= pullLimit) {
-                          canPull.await()
-                        }
-                        pullCounter += 1
-                        log.debug(s"pull inc: $pullCounter")
+                      itemRatings.getOrElseUpdate(i, mutable.Queue[(UserId, Double)]())
+                        .enqueue((u, r))
 
-                        itemRatings.getOrElseUpdate(i, mutable.Queue[(UserId, Double)]())
-                          .enqueue((u, r))
-
-                        ps.pull(i)
-                      } finally {
-                        psLock.unlock()
-                      }
-
+                      // we assume that the PS client is thread safe, so we can use it from different threads
+                      ps.pull(i)
                     }
                   }
                   log.debug("pulls finished")
@@ -158,28 +142,23 @@ object PSOfflineMatrixFactorization {
       override def onPullRecv(item: ItemId,
                               itemVec: Vector,
                               ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
-        // we assume that the PS client is not thread safe, so we need to sync when we use it.
-        psLock.lock()
-        try {
-          // todo shuffle or not?
-          val (user, rating) = itemRatings(item).dequeue()
-          val userVec = userVectors.getOrElseUpdate(user, factorInit.nextFactor(user))
-          val (deltaUserVec, deltaItemVec) = factorUpdate.delta(rating, userVec, itemVec)
-          userVectors(user) = userVec.zip(deltaUserVec).map(x => x._1 + x._2)
-          ps.output((user, userVectors(user)))
-          ps.push(item, deltaItemVec)
+        val (user, rating) = itemRatings(item).dequeue()
+        val userVec = userVectors.getOrElseUpdate(user, factorInit.nextFactor(user))
+        val (deltaUserVec, deltaItemVec) = factorUpdate.delta(rating, userVec, itemVec)
+        userVectors(user) = userVec.zip(deltaUserVec).map(x => x._1 + x._2)
 
-          pullCounter -= 1
-          canPull.signal()
-          log.debug(s"pull dec: $pullCounter")
-        } finally {
-          psLock.unlock()
-        }
+        // we assume that the PS client is thread safe, so we can use it from different threads
+        ps.output((user, userVectors(user)))
+        ps.push(item, deltaItemVec)
       }
 
       override def close(): Unit = {
       }
     }
+
+    val workerLogic: WorkerLogic[Rating, Vector, (UserId, Vector)] =
+      WorkerLogic.addBlockingPullLimiter(workerLogicBase, pullLimit)
+
     val serverLogic =
       new SimplePSLogic[Array[Double]](
         x => factorInitDesc.open().nextFactor(x), { case (vec, deltaVec) => vec.zip(deltaVec).map(x => x._1 + x._2) })
@@ -208,4 +187,5 @@ object PSOfflineMatrixFactorization {
 
     modelUpdates
   }
+
 }
