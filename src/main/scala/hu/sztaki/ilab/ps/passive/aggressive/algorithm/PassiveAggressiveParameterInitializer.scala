@@ -1,11 +1,13 @@
 package hu.sztaki.ilab.ps.passive.aggressive.algorithm
 
-// FIXME we might not need a separate object for such simple code
+import breeze.linalg.{DenseVector, Vector}
+
 object PassiveAggressiveParameterInitializer {
 
-  /**
-    * Initializer every parameter with 0.
-    */
-  val init: Int => Double = _ => 0
+  def initBinary: Int => Double =
+    _ => 0
+
+  def initMulti(featureCount: Int): Int => Vector[Double] =
+    _ => DenseVector.zeros[Double](featureCount)
 
 }

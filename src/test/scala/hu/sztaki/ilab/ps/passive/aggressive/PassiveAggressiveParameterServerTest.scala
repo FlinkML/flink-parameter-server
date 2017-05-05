@@ -1,8 +1,7 @@
 package hu.sztaki.ilab.ps.passive.aggressive
 
 import breeze.linalg.{SparseVector, VectorBuilder}
-import hu.sztaki.ilab.ps.passive.aggressive.PassiveAggressiveBinaryClassification.LabeledVector
-import hu.sztaki.ilab.ps.passive.aggressive.algorithm.binary.PassiveAggressiveClassification
+import hu.sztaki.ilab.ps.passive.aggressive.algorithm.PassiveAggressiveBinaryAlgorithm
 import hu.sztaki.ilab.ps.test.utils.FlinkTestUtils.{SuccessException, executeWithSuccessCheck}
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction
 import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
@@ -13,7 +12,7 @@ import org.scalatest.prop.PropertyChecks
 import scala.util.Random
 
 
-object PassiveAggressiveBinaryClassificationTest {
+object PassiveAggressiveParameterServerTest {
   val featureCount = 500000
   val spareFeatureCount = 10000
   val numberOfTraining = 80
@@ -37,20 +36,22 @@ object PassiveAggressiveBinaryClassificationTest {
 
 }
 
-class PassiveAggressiveBinaryClassificationTest extends FlatSpec with PropertyChecks with Matchers {
+class PassiveAggressiveParameterServerTest extends FlatSpec with PropertyChecks with Matchers {
 
-  import PassiveAggressiveBinaryClassificationTest._
+  import PassiveAggressiveParameterServerTest._
 
-  "Offline MF with PS" should "give reasonable error on test data" in {
+  "Passive Aggressive with PS" should "give reasonable error on test data" in {
     val env = StreamExecutionEnvironment.getExecutionEnvironment
 
     val src = env.fromCollection(trainingData)
 
-    PassiveAggressiveBinaryClassification.transform(
+    type LabeledVector = (SparseVector[Double], Boolean)
+
+    PassiveAggressiveParameterServer.transformBinary(
       src,
       workerParallelism = 3,
       psParallelism = 3,
-      passiveAggressiveMethod = PassiveAggressiveClassification.buildPA(),
+      passiveAggressiveMethod = PassiveAggressiveBinaryAlgorithm.buildPA(),
       pullLimit = 10000,
       iterationWaitTime = 20000
     ).addSink(new RichSinkFunction[Either[LabeledVector, (Int, Double)]] {
@@ -68,14 +69,14 @@ class PassiveAggressiveBinaryClassificationTest extends FlatSpec with PropertyCh
       }
 
       override def close(): Unit = {
-        import hu.sztaki.ilab.ps.utils.PassiveAggressiveBinaryModelEvaluation
+        import hu.sztaki.ilab.ps.test.utils.PassiveAggressiveBinaryModelEvaluation
         val model = modelBuilder.toDenseVector
         // compute percent
         //        Note: It would be better if the testData was used here but the random data does not fit to evaluation the algorithm
 //        The part of the training dataset is used here to test the model
 //        val percent = ModelEvaluation.processModel(model, testData, featureCount,
         val percent = PassiveAggressiveBinaryModelEvaluation.accuracy(model, trainingData.take(20), featureCount,
-          PassiveAggressiveClassification.buildPA())
+          PassiveAggressiveBinaryAlgorithm.buildPA())
         throw SuccessException(percent)
       }
     }).setParallelism(1)
