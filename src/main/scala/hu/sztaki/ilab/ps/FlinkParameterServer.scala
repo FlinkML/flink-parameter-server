@@ -2,7 +2,7 @@ package hu.sztaki.ilab.ps
 
 import hu.sztaki.ilab.ps.entities.PullAnswer
 import hu.sztaki.ilab.ps.server.SimplePSLogic
-import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction}
+import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction, RuntimeContext}
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.streaming.api.functions.co.RichCoFlatMapFunction
@@ -285,6 +285,9 @@ object FlinkParameterServer {
           override def close(): Unit = {
               logic.close(ps)
             }
+
+          override def open(parameters: Configuration): Unit =
+            logic.open(parameters: Configuration, getRuntimeContext: RuntimeContext)
         })
         .setParallelism(psParallelism)
 
@@ -427,6 +430,11 @@ trait ParameterServerLogic[P, PSOut] extends Serializable {
     * Method called when processing is finished.
     */
   def close(ps: ParameterServer[P, PSOut]): Unit = ()
+
+  /**
+    * Method called when the class is initialized.
+    */
+  def open(parameters: Configuration, runtimeContext: RuntimeContext): Unit = ()
 }
 
 trait ParameterServer[P, PSOut] extends Serializable {

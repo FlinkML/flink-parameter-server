@@ -1,9 +1,14 @@
 package hu.sztaki.ilab.ps.passive.aggressive
 
 import breeze.linalg._
-import hu.sztaki.ilab.ps.passive.aggressive.algorithm.PassiveAggressiveAlgorithm
+import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
+import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
+import hu.sztaki.ilab.ps.entities.{PSToWorker, Pull, Push, WorkerToPS}
+import hu.sztaki.ilab.ps.passive.aggressive.algorithm.{PassiveAggressiveAlgorithm, PassiveAggressiveParameterInitializer}
 import hu.sztaki.ilab.ps.passive.aggressive.algorithm.PassiveAggressiveParameterInitializer._
-import hu.sztaki.ilab.ps.server.SimplePSLogicWithClose
+import hu.sztaki.ilab.ps.server.{RangePSLogicWithClose, SimplePSLogicWithClose}
+import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
+import hu.sztaki.ilab.ps.server.sender.SimplePSSender
 import hu.sztaki.ilab.ps.{FlinkParameterServer, ParameterServerClient, WorkerLogic}
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.streaming.api.scala._
@@ -61,6 +66,8 @@ object PassiveAggressiveParameterServer {
                           passiveAggressiveMethod: PassiveAggressiveAlgorithm[Vector[Double], Int, CSCMatrix[Double]],
                           pullLimit: Int,
                           labelCount: Int,
+                          featureCount: Int,
+                          rangePartitioning: Boolean,
                           iterationWaitTime: Long)
   : DataStream[Either[(SparseVector[Double], Int), (FeatureId, Vector[Double])]] = {
     val multiModelBuilder = new ModelBuilder[Vector[Double], CSCMatrix[Double]] {
@@ -77,7 +84,7 @@ object PassiveAggressiveParameterServer {
       initMulti(labelCount), _ + _, multiModelBuilder
     )(
       inputSource, workerParallelism, psParallelism, passiveAggressiveMethod,
-      pullLimit, labelCount, iterationWaitTime
+      pullLimit, labelCount, featureCount, rangePartitioning, iterationWaitTime
     )
   }
 
@@ -112,6 +119,8 @@ object PassiveAggressiveParameterServer {
                       psParallelism: Int,
                       passiveAggressiveMethod: PassiveAggressiveAlgorithm[Double, Boolean, Vector[Double]],
                       pullLimit: Int,
+                      featureCount: Int,
+                      rangePartitioning: Boolean,
                       iterationWaitTime: Long)
   : DataStream[Either[(SparseVector[Double], Boolean), (FeatureId, Double)]] = {
     val labelCount = 1
@@ -131,7 +140,7 @@ object PassiveAggressiveParameterServer {
       initBinary, _ + _, binaryModelBuilder
     )(
       inputSource, workerParallelism, psParallelism, passiveAggressiveMethod,
-      pullLimit, labelCount, iterationWaitTime
+      pullLimit, labelCount, featureCount, rangePartitioning, iterationWaitTime
     )
   }
 
@@ -145,6 +154,9 @@ object PassiveAggressiveParameterServer {
                         passiveAggressiveMethod: PassiveAggressiveAlgorithm[Param, Label, Model],
                         pullLimit: Int,
                         labelCount: Int,
+                        featureCount: Int,
+                        // TODO avoid using boolean
+                        rangePartitioning: Boolean,
                         iterationWaitTime: Long)
                        (implicit
                         tiParam: TypeInformation[Param],
@@ -156,7 +168,26 @@ object PassiveAggressiveParameterServer {
     type LabeledVector = (SparseVector[Double], Label)
     type OptionLabeledVector = (SparseVector[Double], Option[Label])
 
-    val serverLogic = new SimplePSLogicWithClose[Param](init, add)
+    val serverLogic =
+      if (rangePartitioning) {
+        new RangePSLogicWithClose[Param](featureCount, init, add)
+      } else {
+        new SimplePSLogicWithClose[Param](init, add)
+      }
+
+    val paramPartitioner: WorkerToPS[Param] => Int =
+      if (rangePartitioning) {
+        rangePartitionerPS(featureCount)(psParallelism)
+      } else {
+        val partitonerFunction = (paramId: Int) => Math.abs(paramId) % psParallelism
+        val p: WorkerToPS[Param] => Int = {
+          case WorkerToPS(partitionId, msg) => msg match {
+            case Left(Pull(paramId)) => partitonerFunction(paramId)
+            case Right(Push(paramId, delta)) => partitonerFunction(paramId)
+          }
+        }
+        p
+      }
 
     val workerLogic = WorkerLogic.addPullLimiter( // adding pull limiter to avoid iteration deadlock
       new WorkerLogic[OptionLabeledVector, Param, LabeledVector] {
@@ -207,16 +238,41 @@ object PassiveAggressiveParameterServer {
 
       }, pullLimit)
 
-    val modelUpdates = FlinkParameterServer.parameterServerTransform(inputSource,
-      workerLogic,
-      serverLogic,
+
+    val wInPartition: PSToWorker[Param] => Int = {
+      case PSToWorker(workerPartitionIndex, msg) => workerPartitionIndex
+    }
+
+    val modelUpdates = FlinkParameterServer.parameterServerTransform[
+      OptionLabeledVector, Param, (FeatureId, Param),
+      (SparseVector[Double], Label), PSToWorker[Param], WorkerToPS[Param]](
+      inputSource, workerLogic, serverLogic,
+      paramPartitioner,
+      wInPartition,
       workerParallelism,
       psParallelism,
+      new SimpleWorkerReceiver[Param](),
+      new SimpleWorkerSender[Param](),
+      new SimplePSReceiver[Param](),
+      new SimplePSSender[Param](),
       iterationWaitTime)
 
     modelUpdates
   }
 
+  def rangePartitionerPS[P](featureCount: Int)(psParallelism: Int): (WorkerToPS[P]) => Int = {
+    val partitionSize = Math.ceil(featureCount.toDouble / psParallelism).toInt
+    val partitonerFunction = (paramId: Int) => Math.abs(paramId) / partitionSize
+
+    val paramPartitioner: WorkerToPS[P] => Int = {
+      case WorkerToPS(partitionId, msg) => msg match {
+        case Left(Pull(paramId)) => partitonerFunction(paramId)
+        case Right(Push(paramId, delta)) => partitonerFunction(paramId)
+      }
+    }
+
+    paramPartitioner
+  }
 
   /**
     * Generic model builder for binary and multiclass cases.

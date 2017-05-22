@@ -53,6 +53,8 @@ class PassiveAggressiveParameterServerTest extends FlatSpec with PropertyChecks 
       psParallelism = 3,
       passiveAggressiveMethod = PassiveAggressiveBinaryAlgorithm.buildPA(),
       pullLimit = 10000,
+      featureCount = PassiveAggressiveParameterServerTest.featureCount,
+      rangePartitioning = true,
       iterationWaitTime = 20000
     ).addSink(new RichSinkFunction[Either[LabeledVector, (Int, Double)]] {
 
