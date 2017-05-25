@@ -128,11 +128,9 @@ object PassiveAggressiveParameterServer {
     val binaryModelBuilder = new ModelBuilder[Double, Vector[Double]] {
       override def buildModel(params: Iterable[(FeatureId, Double)],
                               featureCount: Int): Vector[Double] = {
-        // TODO check whether it works without creating an array and sorting. It should.
-        val indexValuePair = params.toArray.sortBy(_._1)
-        val model = SparseVector[Double](featureCount)(indexValuePair: _*)
-
-        model
+        val builder = new VectorBuilder[Double](featureCount)
+        params.foreach{case(i, v) => builder.add(i, v)}
+        builder.toSparseVector(keysAlreadyUnique = true)
       }
     }
 
@@ -201,11 +199,15 @@ object PassiveAggressiveParameterServer {
             val restedData = (vector, label)
             // buffer to store the already received parameters
             val waitingValues = new ArrayBuffer[(Int, Param)]()
-            vector.activeKeysIterator.foreach(k => {
-              paramWaitingQueue.getOrElseUpdate(k, mutable.Queue[(OptionLabeledVector, ArrayBuffer[(Int, Param)])]())
-                .enqueue((restedData, waitingValues))
-              ps.pull(k)
-            })
+            //            vector.activeKeysIterator
+            // based on the official recommendation the activeIterator was optimized the following way:
+            //    https://github.com/scalanlp/breeze/wiki/Data-Structures#efficiently-iterating-over-a-sparsevector
+            (0 until vector.activeSize).map(offset => vector.indexAt(offset))
+              .foreach(k => {
+                paramWaitingQueue.getOrElseUpdate(k, mutable.Queue[(OptionLabeledVector, ArrayBuffer[(Int, Param)])]())
+                  .enqueue((restedData, waitingValues))
+                ps.pull(k)
+              })
         }
 
         override def onPullRecv(paramId: Int,

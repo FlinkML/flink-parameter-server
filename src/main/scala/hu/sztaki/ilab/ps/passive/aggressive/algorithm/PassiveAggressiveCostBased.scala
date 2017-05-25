@@ -19,7 +19,8 @@ object PassiveAggressiveCostBased {
     *             when the correct label is y.
     * @return
     */
-  def buildPB(cost: (Int, Int) => Double): PassiveAggressiveCostBased = new PassiveAggressiveCostBasedImplPB(cost)
+  def buildPB(cost: (Int, Int) => Double, labelCount: Int): PassiveAggressiveCostBased =
+    new PassiveAggressiveCostBasedImplPB(cost, labelCount)
 
   /**
     * Max-loss multiclass classification. Denoted by ML in paper.
@@ -28,8 +29,8 @@ object PassiveAggressiveCostBased {
     *             associated with predicting y′ when the correct label is y.
     * @return
     */
-  def buildML(cost: (Int, Int) => Double): PassiveAggressiveCostBased =
-    new PassiveAggressiveCostBasedImplML(cost)
+  def buildML(cost: (Int, Int) => Double, labelCount: Int): PassiveAggressiveCostBased =
+    new PassiveAggressiveCostBasedImplML(cost, labelCount)
 }
 
 /**
@@ -37,8 +38,10 @@ object PassiveAggressiveCostBased {
   * @param cost Denoted with ρ(Rho) in paper. Specifically, for every pair of labels (y, y′) there is a cost ρ(y, y′)
   *             associated with predicting y′ when the correct label is y.
   */
-abstract class PassiveAggressiveCostBased(protected val cost: (Int, Int) => Double)
+abstract class PassiveAggressiveCostBased(protected val cost: (Int, Int) => Double, protected  val labelCount: Int)
   extends PassiveAggressiveMulticlassAlgorithm with Serializable {
+  val builder = new VectorBuilder[Double](labelCount)
+
 
   /**
     * Suffer loss, denoted with l_t in paper
@@ -72,17 +75,15 @@ abstract class PassiveAggressiveCostBased(protected val cost: (Int, Int) => Doub
   def deltaMtx(dataPoint: SparseVector[Double],
                model: CSCMatrix[Double],
                label: Int): ArrayBuffer[(Int, SparseVector[Double])] = {
-    val labelCount = model.cols
     val decisionVector = (model.t * dataPoint).toDenseVector
     val q = quotient(decisionVector, label)
     val t = tau(dataPoint, loss(decisionVector, q, label))
     val delta = new ArrayBuffer[(Int, SparseVector[Double])]()
     if (q != label) {
       dataPoint.activeIterator.foreach { case (i, v) =>
-        val deltaVector = SparseVector.zeros[Double](labelCount)
-        deltaVector(label) = t * v
-        deltaVector(q) = -t * v
-        delta += ((i, deltaVector))
+        builder.add(label, t * v)
+        builder.add(q, -t * v)
+        delta += ((i, builder.toSparseVector(keysAlreadyUnique = true)))
       }
     }
     delta
@@ -125,7 +126,7 @@ abstract class PassiveAggressiveCostBased(protected val cost: (Int, Int) => Doub
 /**
   * Algorithm variation which is referred by PB in paper.
   */
-class PassiveAggressiveCostBasedImplPB(cost: (Int, Int) => Double) extends PassiveAggressiveCostBased(cost) {
+class PassiveAggressiveCostBasedImplPB(cost: (Int, Int) => Double, labelCount: Int) extends PassiveAggressiveCostBased(cost, labelCount) {
   override def quotient(decisionVector: DenseVector[Double], label: Int): Int =
     argmax(decisionVector)
 }
@@ -133,7 +134,7 @@ class PassiveAggressiveCostBasedImplPB(cost: (Int, Int) => Double) extends Passi
 /**
   * Algorithm variation which is referred by ML in paper.
   */
-class PassiveAggressiveCostBasedImplML(cost: (Int, Int) => Double) extends PassiveAggressiveCostBased(cost) {
+class PassiveAggressiveCostBasedImplML(cost: (Int, Int) => Double, labelCount: Int) extends PassiveAggressiveCostBased(cost, labelCount) {
   override def quotient(decisionVector: DenseVector[Double], label: Int): Int =
     argmax(decisionVector.mapPairs((i, v) => v - decisionVector(label) + Math.sqrt(cost(label, i))))
 }

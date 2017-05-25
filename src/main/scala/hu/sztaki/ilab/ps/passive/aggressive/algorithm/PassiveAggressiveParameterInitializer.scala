@@ -7,7 +7,7 @@ object PassiveAggressiveParameterInitializer {
   def initBinary: Int => Double =
     _ => 0
 
-  def initMulti(featureCount: Int): Int => Vector[Double] =
-    _ => DenseVector.zeros[Double](featureCount)
+  def initMulti(labelCount: Int): Int => Vector[Double] =
+    _ => DenseVector.zeros[Double](labelCount)
 
 }

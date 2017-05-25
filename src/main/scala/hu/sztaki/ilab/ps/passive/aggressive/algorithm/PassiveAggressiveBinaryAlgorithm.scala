@@ -45,14 +45,23 @@ abstract class PassiveAggressiveBinaryAlgorithm(protected val aggressiveness: Do
     //    suffer loss, denoted with l_t in paper
     val loss = math.max(0, 1 - label * (dataPoint dot model))
     val multiplier = tau(dataPoint, loss) * label
-    dataPoint *:* multiplier
+    if (multiplier == 0.0) {
+      breeze.linalg.SparseVector.zeros[Double](dataPoint.length)
+    }
+    else {
+      dataPoint *:* multiplier
+    }
   }
 
   override def delta(dataPoint: SparseVector[Double],
                      model: Vector[Double],
                      label: Boolean): Iterable[(Int, Double)] = {
-    deltaVec(dataPoint, model, if (label) 1 else -1)
-      .activeIterator.toIterable
+    //    deltaVec(dataPoint, model, if (label) 1 else -1)
+    //      .activeIterator.toIterable
+    // based on the official recommendation the activeIterator was optimized the following way:
+    //    https://github.com/scalanlp/breeze/wiki/Data-Structures#efficiently-iterating-over-a-sparsevector
+    val vec = deltaVec(dataPoint, model, if (label) 1 else -1)
+    (0 until vec.activeSize).map(offset => (vec.indexAt(offset), vec.valueAt(offset)))
   }
 
   /**

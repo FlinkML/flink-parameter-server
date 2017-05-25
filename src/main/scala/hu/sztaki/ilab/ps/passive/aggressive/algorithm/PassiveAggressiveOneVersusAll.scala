@@ -56,8 +56,14 @@ abstract class PassiveAggressiveOneVersusAll(protected val aggressiveness: Doubl
     labelVector(label) = 1
     val multiplierVect = tau(dataPoint dot dataPoint, loss((model.t * dataPoint).toDenseVector, labelVector)) * labelVector
     val delta = new ArrayBuffer[(Int, DenseVector[Double])]()
-    dataPoint.activeIterator.foreach { case (i, v) =>
-      delta += ((i, v *:* multiplierVect ))
+    if (!multiplierVect.forall(_ == 0.0)) {
+      //      dataPoint.activeIterator
+      // based on the official recommendation the activeIterator was optimized the following way:
+      //    https://github.com/scalanlp/breeze/wiki/Data-Structures#efficiently-iterating-over-a-sparsevector
+      (0 until dataPoint.activeSize).map(offset => (dataPoint.indexAt(offset), dataPoint.valueAt(offset)))
+        .foreach { case (i, v) =>
+          delta += ((i, v *:* multiplierVect))
+        }
     }
     delta
   }
