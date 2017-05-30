@@ -1,7 +1,11 @@
 package hu.sztaki.ilab.ps
 
-import hu.sztaki.ilab.ps.entities.PullAnswer
+import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
+import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
+import hu.sztaki.ilab.ps.entities._
 import hu.sztaki.ilab.ps.server.SimplePSLogic
+import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
+import hu.sztaki.ilab.ps.server.sender.SimplePSSender
 import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction, RuntimeContext}
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.configuration.Configuration
@@ -9,6 +13,8 @@ import org.apache.flink.streaming.api.functions.co.RichCoFlatMapFunction
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.util.Collector
 import org.slf4j.LoggerFactory
+
+import scala.collection.mutable.ArrayBuffer
 
 class FlinkParameterServer
 
@@ -283,8 +289,8 @@ object FlinkParameterServer {
           }
 
           override def close(): Unit = {
-              logic.close(ps)
-            }
+            logic.close(ps)
+          }
 
           override def open(parameters: Configuration): Unit =
             logic.open(parameters: Configuration, getRuntimeContext: RuntimeContext)
@@ -325,6 +331,232 @@ object FlinkParameterServer {
       .map(x => x)
       .setParallelism(workerParallelism)
       .iterate((x: ConnectedStreams[T, PStoWorker]) => stepFunc(x), iterationWaitTime)
+  }
+
+  /**
+    * Applies a transformation to a [[org.apache.flink.streaming.api.scala.DataStream]] that uses a ParameterServer.
+    * Initial parameters can be loaded by a [[org.apache.flink.streaming.api.scala.DataStream]].
+    *
+    * NOTE:
+    * ParameterServerLogic must accept push messages before pulls,
+    * and in WorkerLogic a parameter should be pulled before pushed.
+    *
+    * @param model
+    * Initial parameters to load.
+    * @param trainingData
+    * [[org.apache.flink.streaming.api.scala.DataStream]] containing the training data.
+    * @param workerLogic
+    * Logic of the worker that uses the ParameterServer for training.
+    * @param psLogic
+    * Logic of the ParameterServer that serves pulls and handles pushes.
+    * @param paramPartitioner
+    * Partitioning messages from the worker to PS.
+    * @param wInPartition
+    * Partitioning messages from the PS to worker.
+    * @param workerParallelism
+    * Number of parallel worker instances.
+    * @param psParallelism
+    * Number of parallel PS instances.
+    * @param iterationWaitTime
+    * Time to wait for new messages at worker. If set to 0, the job will run infinitely.
+    * PS is implemented with a Flink iteration, and Flink does not know when the iteration finishes,
+    * so this is how the job can finish.
+    * @tparam T
+    * Type of training data.
+    * @tparam P
+    * Type of parameter.
+    * @tparam PSOut
+    * Type of output of PS.
+    * @tparam WOut
+    * Type of output of workers.
+    * @return
+    * Transform [[DataStream]] consisting of the worker and PS output.
+    */
+  def transformWithModelLoad[T, P, PSOut, WOut](model: DataStream[(Int, P)])
+                                               (trainingData: DataStream[T],
+                                                workerLogic: WorkerLogic[T, P, WOut],
+                                                psLogic: ParameterServerLogic[P, PSOut],
+                                                paramPartitioner: WorkerToPS[P] => Int,
+                                                wInPartition: PSToWorker[P] => Int,
+                                                workerParallelism: Int,
+                                                psParallelism: Int,
+                                                iterationWaitTime: Long = 10000)
+                                               (implicit
+                                                tiT: TypeInformation[T],
+                                                tiP: TypeInformation[P],
+                                                tiPSOut: TypeInformation[PSOut],
+                                                tiWOut: TypeInformation[WOut]
+                                               ): DataStream[Either[WOut, PSOut]] = {
+
+
+    case class EOF() extends Serializable
+
+    type ModelOrT = Either[Either[EOF, (Int, P)], T]
+
+    val modelWithEOF: DataStream[ModelOrT] =
+      model.rebalance.map(x => x).setParallelism(workerParallelism)
+        .forward.flatMap(new RichFlatMapFunction[(Int, P), ModelOrT] {
+
+        var collector: Collector[ModelOrT] = _
+
+        override def flatMap(value: (Int, P), out: Collector[ModelOrT]): Unit = {
+          if (collector == null) {
+            collector = out
+          }
+          out.collect(Left(Right(value)))
+        }
+
+        override def close(): Unit = {
+          if (collector != null) {
+            collector.collect(Left(Left(EOF())))
+          } else {
+            throw new IllegalStateException("There must be a parameter per model partition when loading model.")
+          }
+        }
+      }).setParallelism(workerParallelism)
+
+    val trainingDataPrepared: DataStream[ModelOrT] = trainingData.map(Right(_))
+
+    // TODO do not wrap PSClient every time it's used
+    def wrapPSClient(ps: ParameterServerClient[Either[EOF, P], WOut]): ParameterServerClient[P, WOut] =
+      new ParameterServerClient[P, WOut] {
+        override def pull(id: Int): Unit = ps.pull(id)
+
+        override def push(id: Int, deltaUpdate: P): Unit = ps.push(id, Right(deltaUpdate))
+
+        override def output(out: WOut): Unit = ps.output(out)
+      }
+
+    val wrappedWorkerLogic = new WorkerLogic[ModelOrT, Either[EOF, P], WOut] {
+
+      var receivedEOF = false
+      val dataBuffer = new ArrayBuffer[T]()
+
+      override def onRecv(modelOrDataPoint: ModelOrT, ps: ParameterServerClient[Either[EOF, P], WOut]): Unit = {
+        modelOrDataPoint match {
+          case Left(param) =>
+            param match {
+              case Left(EOF()) =>
+                receivedEOF = true
+
+                // notify all PS instance
+                (0 until psParallelism).foreach {
+                  psIdx => ps.push(psIdx, Left(EOF()))
+                }
+
+                // process buffered data
+                val wrappedPS = wrapPSClient(ps)
+                dataBuffer.foreach {
+                  dataPoint => workerLogic.onRecv(dataPoint, wrappedPS)
+                }
+              case Right((paramId, paramValue)) => ps.push(paramId, Right(paramValue))
+            }
+          case Right(dataPoint) =>
+            if (receivedEOF) {
+              workerLogic.onRecv(dataPoint, wrapPSClient(ps))
+            } else {
+              dataBuffer.append(dataPoint)
+            }
+        }
+      }
+
+      override def onPullRecv(paramId: Int,
+                              paramValue: Either[EOF, P],
+                              ps: ParameterServerClient[Either[EOF, P], WOut]): Unit = {
+        paramValue match {
+          case Right(p) =>
+            workerLogic.onPullRecv(paramId, p, wrapPSClient(ps))
+          case _ =>
+            throw new IllegalStateException("PS should not send EOF pull answers")
+        }
+      }
+
+      override def close(): Unit = {
+        workerLogic.close()
+      }
+    }
+
+    val wrappedParamPartitioner: WorkerToPS[Either[EOF, P]] => Int = {
+      case WorkerToPS(workerPartitionIndex, msg) => msg match {
+        case pull@Left(Pull(paramId)) =>
+          paramPartitioner(WorkerToPS(workerPartitionIndex, pull.asInstanceOf[Either[Pull, Push[P]]]))
+        case pushMsg@Right(Push(paramId, deltaOrEOF)) => deltaOrEOF match {
+          case Left(EOF()) => paramId
+          case Right(delta) => paramPartitioner(WorkerToPS(workerPartitionIndex, Right(Push(paramId, delta))))
+        }
+      }
+    }
+
+    // TODO do not wrap PS every time it's used
+    def wrapPS(ps: ParameterServer[Either[EOF, P], PSOut]): ParameterServer[P, PSOut] =
+      new ParameterServer[P, PSOut] {
+
+        override def answerPull(id: Int, value: P, workerPartitionIndex: Int): Unit =
+          ps.answerPull(id, Right(value), workerPartitionIndex)
+
+        override def output(out: PSOut): Unit =
+          ps.output(out)
+      }
+
+    val wrappedPSLogic = new ParameterServerLogic[Either[EOF, P], PSOut] {
+
+      var eofCountDown: Int = workerParallelism
+
+      val pullBuffer = new ArrayBuffer[(Int, Int)]()
+
+      override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[Either[EOF, P], PSOut]): Unit = {
+        if (eofCountDown == 0) {
+          psLogic.onPullRecv(id, workerPartitionIndex, wrapPS(ps))
+        } else {
+          pullBuffer.append((id, workerPartitionIndex))
+        }
+      }
+
+      override def onPushRecv(id: Int,
+                              deltaUpdate: Either[EOF, P],
+                              ps: ParameterServer[Either[EOF, P], PSOut]): Unit = {
+        deltaUpdate match {
+          case Left(EOF()) =>
+            eofCountDown -= 1
+
+            if (eofCountDown == 0) {
+              // we have received the model, we can process the buffered pulls
+              pullBuffer.foreach {
+                case (paramId, workerPartitionIndex) =>
+                  psLogic.onPullRecv(paramId, workerPartitionIndex, wrapPS(ps))
+              }
+            }
+          case Right(param) =>
+            psLogic.onPushRecv(id, param, wrapPS(ps))
+        }
+
+      }
+
+      override def close(ps: ParameterServer[Either[EOF, P], PSOut]): Unit =
+        psLogic.close(wrapPS(ps))
+
+      override def open(parameters: Configuration, runtimeContext: RuntimeContext): Unit =
+        psLogic.open(parameters, runtimeContext)
+    }
+
+    val wrappedWorkerInPartition: PSToWorker[Either[EOF, P]] => Int = {
+      case PSToWorker(workerPartitionIndex, PullAnswer(paramId, Right(param))) =>
+        wInPartition(PSToWorker(workerPartitionIndex, PullAnswer(paramId, param)))
+    }
+
+    parameterServerTransform(
+      modelWithEOF.union(trainingDataPrepared),
+      wrappedWorkerLogic,
+      wrappedPSLogic,
+      wrappedParamPartitioner,
+      wrappedWorkerInPartition,
+      workerParallelism,
+      psParallelism,
+      new SimpleWorkerReceiver[Either[EOF, P]],
+      new SimpleWorkerSender[Either[EOF, P]],
+      new SimplePSReceiver[Either[EOF, P]],
+      new SimplePSSender[Either[EOF, P]]
+    )
   }
 
   /**
