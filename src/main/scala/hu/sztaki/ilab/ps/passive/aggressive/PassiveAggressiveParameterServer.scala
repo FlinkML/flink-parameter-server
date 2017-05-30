@@ -60,7 +60,8 @@ object PassiveAggressiveParameterServer {
     * @return
     * Stream of Parameter Server model updates and predicted values.
     */
-  def transformMulticlass(inputSource: DataStream[(SparseVector[Double], Option[Int])],
+  def transformMulticlass(model: Option[DataStream[(Int, Vector[Double])]] = None)
+                         (inputSource: DataStream[(SparseVector[Double], Option[Int])],
                           workerParallelism: Int,
                           psParallelism: Int,
                           passiveAggressiveMethod: PassiveAggressiveAlgorithm[Vector[Double], Int, CSCMatrix[Double]],
@@ -80,7 +81,7 @@ object PassiveAggressiveParameterServer {
       }
     }
 
-    transformGeneric[Vector[Double], Int, CSCMatrix[Double]](
+    transformGeneric[Vector[Double], Int, CSCMatrix[Double]](model)(
       initMulti(labelCount), _ + _, multiModelBuilder
     )(
       inputSource, workerParallelism, psParallelism, passiveAggressiveMethod,
@@ -114,7 +115,8 @@ object PassiveAggressiveParameterServer {
     * @return
     * Stream of Parameter Server model updates and predicted values.
     */
-  def transformBinary(inputSource: DataStream[(SparseVector[Double], Option[Boolean])],
+  def transformBinary(model: Option[DataStream[(Int, Double)]] = None)
+                     (inputSource: DataStream[(SparseVector[Double], Option[Boolean])],
                       workerParallelism: Int,
                       psParallelism: Int,
                       passiveAggressiveMethod: PassiveAggressiveAlgorithm[Double, Boolean, Vector[Double]],
@@ -134,7 +136,7 @@ object PassiveAggressiveParameterServer {
       }
     }
 
-    transformGeneric[Double, Boolean, Vector[Double]](
+    transformGeneric[Double, Boolean, Vector[Double]](model)(
       initBinary, _ + _, binaryModelBuilder
     )(
       inputSource, workerParallelism, psParallelism, passiveAggressiveMethod,
@@ -143,7 +145,8 @@ object PassiveAggressiveParameterServer {
   }
 
   private def transformGeneric
-  [Param, Label, Model](init: Int => Param,
+  [Param, Label, Model](model: Option[DataStream[(Int, Param)]] = None)
+                       (init: Int => Param,
                         add: (Param, Param) => Param,
                         modelBuilder: ModelBuilder[Param, Model])
                        (inputSource: DataStream[(SparseVector[Double], Option[Label])],
@@ -245,20 +248,30 @@ object PassiveAggressiveParameterServer {
       case PSToWorker(workerPartitionIndex, msg) => workerPartitionIndex
     }
 
-    val modelUpdates = FlinkParameterServer.parameterServerTransform[
-      OptionLabeledVector, Param, (FeatureId, Param),
-      (SparseVector[Double], Label), PSToWorker[Param], WorkerToPS[Param]](
-      inputSource, workerLogic, serverLogic,
-      paramPartitioner,
-      wInPartition,
-      workerParallelism,
-      psParallelism,
-      new SimpleWorkerReceiver[Param](),
-      new SimpleWorkerSender[Param](),
-      new SimplePSReceiver[Param](),
-      new SimplePSSender[Param](),
-      iterationWaitTime)
-
+    val modelUpdates = model match {
+      case Some(m) => FlinkParameterServer.transformWithModelLoad[
+        OptionLabeledVector, Param, (FeatureId, Param),
+        (SparseVector[Double], Label)](m)(
+        inputSource, workerLogic, serverLogic,
+        paramPartitioner,
+        wInPartition,
+        workerParallelism,
+        psParallelism,
+        iterationWaitTime)
+      case None => FlinkParameterServer.parameterServerTransform[
+        OptionLabeledVector, Param, (FeatureId, Param),
+        (SparseVector[Double], Label), PSToWorker[Param], WorkerToPS[Param]](
+        inputSource, workerLogic, serverLogic,
+        paramPartitioner,
+        wInPartition,
+        workerParallelism,
+        psParallelism,
+        new SimpleWorkerReceiver[Param](),
+        new SimpleWorkerSender[Param](),
+        new SimplePSReceiver[Param](),
+        new SimplePSSender[Param](),
+        iterationWaitTime)
+    }
     modelUpdates
   }
 
