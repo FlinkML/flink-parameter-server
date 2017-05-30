@@ -18,9 +18,7 @@ class SimplePSLogicWithClose[P](paramInit: => Int => P, paramUpdate: => (P, P) =
       case Some(q) =>
         update(q, deltaUpdate)
       case None =>
-        throw new IllegalStateException(
-          "Parameter did not exist, was not able to update by any delta." +
-          " You should not push before pulling!")
+        deltaUpdate
     }
     params += ((id, c))
   }

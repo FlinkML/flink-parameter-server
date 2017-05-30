@@ -31,9 +31,7 @@ class RangePSLogicWithClose[P](featureCount: Int, paramInit: => Int => P, paramU
       case Some(q) =>
         update(q, deltaUpdate)
       case None =>
-        throw new IllegalStateException(
-          "Parameter did not exist, was not able to update by any delta." +
-            " You should not push before pulling!")
+        deltaUpdate
     }
     params(index) = Some(c)
   }
