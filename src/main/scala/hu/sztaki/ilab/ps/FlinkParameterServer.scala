@@ -203,7 +203,7 @@ object FlinkParameterServer {
                                                                           workerSender: WorkerSender[WorkerToPS, P],
                                                                           psReceiver: PSReceiver[WorkerToPS, P],
                                                                           psSender: PSSender[PStoWorker, P],
-                                                                          iterationWaitTime: Long = 10000)
+                                                                          iterationWaitTime: Long)
                                                                          (implicit
                                                                           tiT: TypeInformation[T],
                                                                           tiP: TypeInformation[P],
@@ -380,7 +380,7 @@ object FlinkParameterServer {
                                                 wInPartition: PSToWorker[P] => Int,
                                                 workerParallelism: Int,
                                                 psParallelism: Int,
-                                                iterationWaitTime: Long = 10000)
+                                                iterationWaitTime: Long)
                                                (implicit
                                                 tiT: TypeInformation[T],
                                                 tiP: TypeInformation[P],
@@ -555,7 +555,8 @@ object FlinkParameterServer {
       new SimpleWorkerReceiver[Either[EOF, P]],
       new SimpleWorkerSender[Either[EOF, P]],
       new SimplePSReceiver[Either[EOF, P]],
-      new SimplePSSender[Either[EOF, P]]
+      new SimplePSSender[Either[EOF, P]],
+      iterationWaitTime
     )
   }
 
