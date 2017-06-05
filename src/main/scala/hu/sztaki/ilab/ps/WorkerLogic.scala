@@ -1,7 +1,6 @@
 package hu.sztaki.ilab.ps
 
 import java.util.concurrent.locks.{Condition, ReentrantLock}
-
 import scala.collection.mutable
 import scala.concurrent.{CanAwait, ExecutionContext, Future}
 import scala.concurrent.duration.Duration
