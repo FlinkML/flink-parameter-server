@@ -68,7 +68,7 @@ class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
     }
 
     val outputDS =
-      parameterServerTransform(
+      transform(
         // @todo add real source
         src,
         // @todo add real worker logic
@@ -99,7 +99,8 @@ class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
         new SimpleWorkerReceiver[P],
         new SimpleWorkerSender[P],
         new SimplePSReceiver[P],
-        new SimplePSSender[P]
+        new SimplePSSender[P],
+        10000
       )
 
     outputDS.map(

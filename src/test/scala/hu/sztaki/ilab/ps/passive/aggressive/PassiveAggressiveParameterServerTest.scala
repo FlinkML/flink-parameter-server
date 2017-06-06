@@ -47,7 +47,7 @@ class PassiveAggressiveParameterServerTest extends FlatSpec with PropertyChecks 
 
     type LabeledVector = (SparseVector[Double], Boolean)
 
-    PassiveAggressiveParameterServer.transformBinary(
+    PassiveAggressiveParameterServer.transformBinary(None)(
       src,
       workerParallelism = 3,
       psParallelism = 3,

@@ -58,21 +58,20 @@ object FlinkParameterServer {
     * @return
     * Transform [[DataStream]] consisting of the worker and PS output.
     */
-  def parameterServerTransform[T, P, WOut](trainingData: DataStream[T],
-                                           workerLogic: WorkerLogic[T, P, WOut],
-                                           paramInit: => Int => P,
-                                           paramUpdate: => (P, P) => P,
-                                           workerParallelism: Int,
-                                           psParallelism: Int,
-                                           iterationWaitTime: Long
-                                          )
-                                          (implicit
-                                           tiT: TypeInformation[T],
-                                           tiP: TypeInformation[P],
-                                           tiWOut: TypeInformation[WOut]
-                                          ): DataStream[Either[WOut, (Int, P)]] = {
+  def transform[T, P, WOut](trainingData: DataStream[T],
+                            workerLogic: WorkerLogic[T, P, WOut],
+                            paramInit: => Int => P,
+                            paramUpdate: => (P, P) => P,
+                            workerParallelism: Int,
+                            psParallelism: Int,
+                            iterationWaitTime: Long)
+                           (implicit
+                            tiT: TypeInformation[T],
+                            tiP: TypeInformation[P],
+                            tiWOut: TypeInformation[WOut]
+                           ): DataStream[Either[WOut, (Int, P)]] = {
     val psLogic = new SimplePSLogic[P](paramInit, paramUpdate)
-    parameterServerTransform(trainingData, workerLogic, psLogic,
+    transform(trainingData, workerLogic, psLogic,
       workerParallelism, psParallelism, iterationWaitTime)
   }
 
@@ -105,18 +104,18 @@ object FlinkParameterServer {
     * @return
     * Transform [[DataStream]] consisting of the worker and PS output.
     */
-  def parameterServerTransform[T, P, PSOut, WOut](trainingData: DataStream[T],
-                                                  workerLogic: WorkerLogic[T, P, WOut],
-                                                  psLogic: ParameterServerLogic[P, PSOut],
-                                                  workerParallelism: Int,
-                                                  psParallelism: Int,
-                                                  iterationWaitTime: Long)
-                                                 (implicit
-                                                  tiT: TypeInformation[T],
-                                                  tiP: TypeInformation[P],
-                                                  tiPSOut: TypeInformation[PSOut],
-                                                  tiWOut: TypeInformation[WOut]
-                                                 ): DataStream[Either[WOut, PSOut]] = {
+  def transform[T, P, PSOut, WOut](trainingData: DataStream[T],
+                                   workerLogic: WorkerLogic[T, P, WOut],
+                                   psLogic: ParameterServerLogic[P, PSOut],
+                                   workerParallelism: Int,
+                                   psParallelism: Int,
+                                   iterationWaitTime: Long)
+                                  (implicit
+                                   tiT: TypeInformation[T],
+                                   tiP: TypeInformation[P],
+                                   tiPSOut: TypeInformation[PSOut],
+                                   tiWOut: TypeInformation[WOut]
+                                  ): DataStream[Either[WOut, PSOut]] = {
     import hu.sztaki.ilab.ps.entities._
     import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
     import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
@@ -137,7 +136,7 @@ object FlinkParameterServer {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 
-    parameterServerTransform[T, P, PSOut, WOut, PSToWorker[P], WorkerToPS[P]](
+    transform[T, P, PSOut, WOut, PSToWorker[P], WorkerToPS[P]](
       trainingData,
       workerLogic, psLogic,
       workerToPSPartitioner, psToWorkerPartitioner,
@@ -192,26 +191,26 @@ object FlinkParameterServer {
     * @return
     * Transform [[DataStream]] consisting of the worker and PS output.
     */
-  def parameterServerTransform[T, P, PSOut, WOut, PStoWorker, WorkerToPS](trainingData: DataStream[T],
-                                                                          workerLogic: WorkerLogic[T, P, WOut],
-                                                                          psLogic: ParameterServerLogic[P, PSOut],
-                                                                          paramPartitioner: WorkerToPS => Int,
-                                                                          wInPartition: PStoWorker => Int,
-                                                                          workerParallelism: Int,
-                                                                          psParallelism: Int,
-                                                                          workerReceiver: WorkerReceiver[PStoWorker, P],
-                                                                          workerSender: WorkerSender[WorkerToPS, P],
-                                                                          psReceiver: PSReceiver[WorkerToPS, P],
-                                                                          psSender: PSSender[PStoWorker, P],
-                                                                          iterationWaitTime: Long)
-                                                                         (implicit
-                                                                          tiT: TypeInformation[T],
-                                                                          tiP: TypeInformation[P],
-                                                                          tiPSOut: TypeInformation[PSOut],
-                                                                          tiWOut: TypeInformation[WOut],
-                                                                          tiWorkerIn: TypeInformation[PStoWorker],
-                                                                          tiWorkerOut: TypeInformation[WorkerToPS]
-                                                                         ): DataStream[Either[WOut, PSOut]] = {
+  def transform[T, P, PSOut, WOut, PStoWorker, WorkerToPS](trainingData: DataStream[T],
+                                                           workerLogic: WorkerLogic[T, P, WOut],
+                                                           psLogic: ParameterServerLogic[P, PSOut],
+                                                           paramPartitioner: WorkerToPS => Int,
+                                                           wInPartition: PStoWorker => Int,
+                                                           workerParallelism: Int,
+                                                           psParallelism: Int,
+                                                           workerReceiver: WorkerReceiver[PStoWorker, P],
+                                                           workerSender: WorkerSender[WorkerToPS, P],
+                                                           psReceiver: PSReceiver[WorkerToPS, P],
+                                                           psSender: PSSender[PStoWorker, P],
+                                                           iterationWaitTime: Long)
+                                                          (implicit
+                                                           tiT: TypeInformation[T],
+                                                           tiP: TypeInformation[P],
+                                                           tiPSOut: TypeInformation[PSOut],
+                                                           tiWOut: TypeInformation[WOut],
+                                                           tiWorkerIn: TypeInformation[PStoWorker],
+                                                           tiWorkerOut: TypeInformation[WorkerToPS]
+                                                          ): DataStream[Either[WOut, PSOut]] = {
     def stepFunc(workerIn: ConnectedStreams[T, PStoWorker]):
     (DataStream[PStoWorker], DataStream[Either[WOut, PSOut]]) = {
 
@@ -259,13 +258,13 @@ object FlinkParameterServer {
       val wOut = worker.flatMap(x => x match {
         case Right(out) => Some(out)
         case _ => None
-      })
+      }).setParallelism(workerParallelism)
 
       val ps = worker
         .flatMap(x => x match {
           case Left(workerOut) => Some(workerOut)
           case _ => None
-        })
+        }).setParallelism(workerParallelism)
         .partitionCustom(new Partitioner[Int]() {
           override def partition(key: Int, numPartitions: Int): Int = {
             key % numPartitions
@@ -321,10 +320,10 @@ object FlinkParameterServer {
       })
         .setParallelism(psParallelism)
 
-      val wOutEither: DataStream[Either[WOut, PSOut]] = wOut.map(x => Left(x))
-      val psOutEither: DataStream[Either[WOut, PSOut]] = psToOut.map(x => Right(x))
+      val wOutEither: DataStream[Either[WOut, PSOut]] = wOut.forward.map(x => Left(x))
+      val psOutEither: DataStream[Either[WOut, PSOut]] = psToOut.forward.map(x => Right(x))
 
-      (psToWorker, wOutEither.union(psOutEither))
+      (psToWorker, wOutEither.setParallelism(workerParallelism).union(psOutEither.setParallelism(psParallelism)))
     }
 
     trainingData
@@ -415,7 +414,8 @@ object FlinkParameterServer {
         }
       }).setParallelism(workerParallelism)
 
-    val trainingDataPrepared: DataStream[ModelOrT] = trainingData.map(Right(_))
+    val trainingDataPrepared: DataStream[ModelOrT] = trainingData.rebalance.map(x => x).setParallelism(workerParallelism)
+      .forward.map(Right(_))
 
     // TODO do not wrap PSClient every time it's used
     def wrapPSClient(ps: ParameterServerClient[Either[EOF, P], WOut]): ParameterServerClient[P, WOut] =
@@ -544,8 +544,8 @@ object FlinkParameterServer {
         wInPartition(PSToWorker(workerPartitionIndex, PullAnswer(paramId, param)))
     }
 
-    parameterServerTransform(
-      modelWithEOF.union(trainingDataPrepared),
+    transform(
+      modelWithEOF.union(trainingDataPrepared.setParallelism(workerParallelism)),
       wrappedWorkerLogic,
       wrappedPSLogic,
       wrappedParamPartitioner,

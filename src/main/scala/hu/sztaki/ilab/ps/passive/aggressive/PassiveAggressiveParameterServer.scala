@@ -258,7 +258,7 @@ object PassiveAggressiveParameterServer {
         workerParallelism,
         psParallelism,
         iterationWaitTime)
-      case None => FlinkParameterServer.parameterServerTransform[
+      case None => FlinkParameterServer.transform[
         OptionLabeledVector, Param, (FeatureId, Param),
         (SparseVector[Double], Label), PSToWorker[Param], WorkerToPS[Param]](
         inputSource, workerLogic, serverLogic,

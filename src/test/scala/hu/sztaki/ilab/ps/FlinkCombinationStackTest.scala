@@ -85,7 +85,7 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
     }
 
     val outputDS =
-      parameterServerTransform(
+      FlinkParameterServer.transform(
         // @todo add real source
         src,
         // @todo add real worker logic
@@ -124,7 +124,8 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
         new MultipleWorkerReceiver[P],
         combinoClientSender,
         new MultiplePSReceiver[P],
-        combinoPSSender
+        combinoPSSender,
+        5000
       )
 
     outputDS.map(

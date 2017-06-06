@@ -16,12 +16,14 @@ object FlinkTestUtils {
       env.execute()
       throw NoSuccessExceptionReceived()
     } catch {
-      case e: JobExecutionException => e.getCause match {
-        case successException: SuccessException[T] =>
-          checker(successException.content)
-        case otherCause =>
-          throw e
-      }
+      case e: JobExecutionException =>
+        val rootCause = Stream.iterate[Throwable](e)(_.getCause()).takeWhile(_ != null).last
+        rootCause match {
+          case successException: SuccessException[T] =>
+            checker(successException.content)
+          case otherCause =>
+            throw e
+        }
       case e: Throwable => throw e
     }
   }

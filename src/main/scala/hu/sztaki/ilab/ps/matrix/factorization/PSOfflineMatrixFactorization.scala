@@ -151,7 +151,7 @@ object PSOfflineMatrixFactorization {
       case (vec, deltaVec) => vec.zip(deltaVec).map(x => x._1 + x._2)
     }
 
-    val modelUpdates = FlinkParameterServer.parameterServerTransform(
+    val modelUpdates = FlinkParameterServer.transform(
       ratings,
       workerLogic,
       paramInit, paramUpdate,

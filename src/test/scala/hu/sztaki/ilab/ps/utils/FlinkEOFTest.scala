@@ -63,7 +63,7 @@ object FlinkEOFTest {
   val EOFSumPattern: Regex = "EOF (.*)".r
 
   val srcParallelism = 7
-  val flatMapParallelism = 3
+  val flatMapParallelism = 1
 
   val sinkFunc = new SinkFunction[String] {
     var sum: Int = 0
