@@ -21,20 +21,15 @@ class PSOnlineMatrixFactorizationImplicitTest {
 object PSOnlineMatrixFactorizationImplicitTest{
   type Rating = (UserId, ItemId, Double)
 
-  val numRatings = 10
-  val random = new Random(5)
   val milisecBetweenRatings = 1000
   val numIterations = 10
 
-  val numFactors = 20
+  val numFactors = 10
   val learningRate = 0.01
-  val iterations = 10
   val pullLimit = 100
   val workerParallelism = 4
   val psParallelism = 3
-  val iterationWaitTime = 400000
-  val numUsers = 5
-  val numItems = 10
+  val iterationWaitTime = 10000
 
   def main(args: Array[String]): Unit = {
 
@@ -45,38 +40,16 @@ object PSOnlineMatrixFactorizationImplicitTest{
     val env = StreamExecutionEnvironment.getExecutionEnvironment
     val data = env.readTextFile(input_file_name)
 
-    val lastFM = data.map(line => {
-      val fieldsArray = line.split(" ")
-      (fieldsArray(1).toInt, fieldsArray(2).toInt, 1.0)
-    })
-
-      .flatMap(r => {
-        val temp = new ListBuffer[(Int, Int, Double)]()
-
-        temp += r
-
-        for(i <- 1 to 20){
-          temp += Tuple3(r._1, 1+Random.nextInt(54615) , 0.0)
-        }
-
-        temp
-    })
-
     val lastFM_RichFlatMap = data.flatMap(new RichFlatMapFunction[String, (Int, Int, Double)] {
       var count = 0
       override def flatMap(value: String, out: Collector[(ItemId, ItemId, Double)]): Unit = {
         val fieldsArray = value.split(" ")
         val r = Tuple3(fieldsArray(1).toInt, fieldsArray(2).toInt, 1.0)
         out.collect(r)
-        count += 1
 
-        for(i <- 1 to 20){
-         out.collect(r._1, 1+Random.nextInt(54615) , 0.0)
+        for(i <- 1 to 40){
+         out.collect(r._1, 1+Random.nextInt(37988) , 0.0)
         }
-      }
-
-      override def close(): Unit = {
-        print('\n' + '\n' +'\n' + count +'\n' +'\n' +'\n' +'\n')
       }
     })
 
@@ -85,7 +58,7 @@ object PSOnlineMatrixFactorizationImplicitTest{
       lastFM_RichFlatMap,
       numFactors,
       learningRate,
-      iterations, pullLimit,
+      pullLimit,
       workerParallelism,
       psParallelism,
       iterationWaitTime)
@@ -93,10 +66,9 @@ object PSOnlineMatrixFactorizationImplicitTest{
 
           val userVectors = new mutable.HashMap[UserId, Array[Double]]
           val itemVectors = new mutable.HashMap[ItemId, Array[Double]]
-          var count = 0
 
           override def invoke(value: Either[(UserId, Vector), (ItemId, Vector)]): Unit = {
-            count += 1
+
             value match {
               case Left((userId, vec)) =>
                 userVectors.update(userId, vec)
@@ -106,9 +78,7 @@ object PSOnlineMatrixFactorizationImplicitTest{
           }
 
           override def close(): Unit = {
-            print('\n' + '\n' +'\n' + count +'\n' +'\n' +'\n' +'\n')
             val userVectorFile = new java.io.PrintWriter(new java.io.File(userVector_output_name))
-            userVectorFile.write("size: " + userVectors.size + '\n')
             for((k,v) <- userVectors){
               for(value <- v){
                 userVectorFile.write(k + ";" + value + '\n')

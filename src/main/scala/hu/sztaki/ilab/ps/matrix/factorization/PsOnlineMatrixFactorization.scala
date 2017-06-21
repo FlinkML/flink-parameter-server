@@ -25,8 +25,7 @@ object PsOnlineMatrixFactorization{
   def psOnlineMF(src: DataStream[Rating],
                   numFactors: Int,
                   learningRate: Double,
-                  iterations: Int,
-                  pullLimit: Long,
+                  pullLimit: Int,
                   workerParallelism: Int,
                   psParallelism: Int,
                   iterationWaitTime: Long): DataStream[Either[(UserId, Vector), (ItemId, Vector)]] = {
@@ -46,8 +45,8 @@ object PsOnlineMatrixFactorization{
 
       override
       def onPullRecv(paramId: ItemId, paramValue: Vector, ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
-        val rate = ratingBuffer(paramId).head
-        ratingBuffer.remove(0)
+        val rate = ratingBuffer(paramId).head //ListQueue poll!!
+        ratingBuffer(paramId).remove(0)
 
         val user = UserVector.getOrElseUpdate(rate._1, factorInitDesc.open().nextFactor(rate._1))
         val item = paramValue
@@ -73,7 +72,7 @@ object PsOnlineMatrixFactorization{
 
     val modelUpdates = FlinkParameterServer.parameterServerTransform(
       src,
-      WorkerLogic.addPullLimiter(workerLogic, 100),
+      WorkerLogic.addPullLimiter(workerLogic, pullLimit),
       serverLogic,
       workerParallelism,
       psParallelism,
