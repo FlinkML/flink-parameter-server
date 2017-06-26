@@ -27,11 +27,12 @@ object PassiveAggressiveParameterServerTest {
     vectorBuilder.toSparseVector()
   }
 
-  val trainingData: Seq[(SparseVector[Double], Option[Boolean])] =  Seq.fill(numberOfTraining)(
-    (randomSparseVector, Option(random.nextBoolean()))
+  val trainingData: Seq[(SparseVector[Double], Boolean)] =  Seq.fill(numberOfTraining)(
+    (randomSparseVector, random.nextBoolean())
   )
-  val testData: Seq[(SparseVector[Double], Option[Boolean])] =  Seq.fill(numberOfTest)(
-    (randomSparseVector, Option(random.nextBoolean()))
+
+  val testData: Seq[(SparseVector[Double], Boolean)] =  Seq.fill(numberOfTest)(
+    (randomSparseVector, random.nextBoolean())
   )
 
 }
@@ -43,7 +44,8 @@ class PassiveAggressiveParameterServerTest extends FlatSpec with PropertyChecks 
   "Passive Aggressive with PS" should "give reasonable error on test data" in {
     val env = StreamExecutionEnvironment.getExecutionEnvironment
 
-    val src = env.fromCollection(trainingData)
+    val src: DataStream[Either[(SparseVector[Double], Boolean), (Long, SparseVector[Double])]] =
+      env.fromCollection(trainingData).map(Left(_))
 
     type LabeledVector = (SparseVector[Double], Boolean)
 
@@ -77,7 +79,9 @@ class PassiveAggressiveParameterServerTest extends FlatSpec with PropertyChecks 
         //        Note: It would be better if the testData was used here but the random data does not fit to evaluation the algorithm
 //        The part of the training dataset is used here to test the model
 //        val percent = ModelEvaluation.processModel(model, testData, featureCount,
-        val percent = PassiveAggressiveBinaryModelEvaluation.accuracy(model, trainingData.take(20), featureCount,
+        val percent = PassiveAggressiveBinaryModelEvaluation.accuracy(model,
+          trainingData.take(20).map { case (vec, lab) => (vec, Some(lab)) },
+          featureCount,
           PassiveAggressiveBinaryAlgorithm.buildPA())
         throw SuccessException(percent)
       }

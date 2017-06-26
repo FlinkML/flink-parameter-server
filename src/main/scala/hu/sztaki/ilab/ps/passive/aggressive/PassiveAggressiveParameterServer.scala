@@ -4,7 +4,7 @@ import breeze.linalg._
 import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
 import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
 import hu.sztaki.ilab.ps.entities.{PSToWorker, Pull, Push, WorkerToPS}
-import hu.sztaki.ilab.ps.passive.aggressive.algorithm.{PassiveAggressiveAlgorithm, PassiveAggressiveParameterInitializer}
+import hu.sztaki.ilab.ps.passive.aggressive.algorithm.PassiveAggressiveAlgorithm
 import hu.sztaki.ilab.ps.passive.aggressive.algorithm.PassiveAggressiveParameterInitializer._
 import hu.sztaki.ilab.ps.server.{RangePSLogicWithClose, SimplePSLogicWithClose}
 import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
@@ -24,11 +24,118 @@ object PassiveAggressiveParameterServer {
 
   private val log = LoggerFactory.getLogger(classOf[PassiveAggressiveParameterServer])
 
-  // A labeled data-point consisting of a sparse vector with a boolean label
-  //  type LabeledVector = (SparseVector[Double], Boolean)
-  //  type OptionLabeledVector = (SparseVector[Double], Option[Boolean])
-
   type FeatureId = Int
+
+  type LabeledVector[LabelType] = (SparseVector[Double], LabelType)
+  type UnlabeledVector = (Long, SparseVector[Double])
+  type OptionLabeledVector[LabelType] = Either[LabeledVector[LabelType], UnlabeledVector]
+
+  /**
+    * Applies online multiclass classification for a [[org.apache.flink.streaming.api.scala.DataStream]] of sparse
+    * vectors. For vectors with labels, it updates the model "passive-aggressively",
+    * for vectors without label predicts its labels based on the model.
+    *
+    * Labels should be indexed from 0.
+    *
+    * Note that the order could be mixed, i.e. it's possible to predict based on some model parameters updated, while
+    * others not.
+    *
+    * @param inputSource
+    * [[org.apache.flink.streaming.api.scala.DataStream]] of labelled and unlabelled vector.
+    * The label is marked with an [[Option]].
+    * @param workerParallelism
+    * Number of worker instances for Parameter Server.
+    * @param psParallelism
+    * Number of Parameter Server instances.
+    * @param passiveAggressiveMethod
+    * Method for Passive Aggressive training.
+    * @param pullLimit
+    * Limit of unanswered pulls at a worker instance.
+    * @param labelCount
+    * Number of possible labels.
+    * @param iterationWaitTime
+    * Time to wait for new messages at worker. If set to 0, the job will run infinitely.
+    * PS is implemented with a Flink iteration, and Flink does not know when the iteration finishes,
+    * so this is how the job can finish.
+    * @return
+    * Stream of Parameter Server model updates and predicted values.
+    */
+  private def transformMulticlassGen[VecId: TypeInformation](model: Option[DataStream[(Int, Vector[Double])]] = None)
+                                                            (inputSource: DataStream[OptionLabeledVector[Int]],
+                                                             workerParallelism: Int,
+                                                             psParallelism: Int,
+                                                             passiveAggressiveMethod: PassiveAggressiveAlgorithm[Vector[Double], Int, CSCMatrix[Double]],
+                                                             pullLimit: Int,
+                                                             labelCount: Int,
+                                                             featureCount: Int,
+                                                             rangePartitioning: Boolean,
+                                                             iterationWaitTime: Long)
+                                                            (implicit ev:
+                                                            OptionLabeledVectorWithId[OptionLabeledVector[Int], VecId, Int])
+  : DataStream[Either[(VecId, Int), (FeatureId, Vector[Double])]] = {
+    val multiModelBuilder = new ModelBuilder[Vector[Double], CSCMatrix[Double]] {
+      override def buildModel(params: Iterable[(FeatureId, Vector[Double])],
+                              featureCount: Int): CSCMatrix[Double] = {
+        val builder = new CSCMatrix.Builder[Double](featureCount, labelCount)
+        params.foreach { case (i, vector) => vector.foreachPair((j, v) => builder.add(i, j, v)) }
+
+        builder.result
+      }
+    }
+
+    transformGeneric[Vector[Double], Int, CSCMatrix[Double], OptionLabeledVector[Int], VecId](model)(
+      initMulti(labelCount), _ + _, multiModelBuilder
+    )(
+      inputSource, workerParallelism, psParallelism, passiveAggressiveMethod,
+      pullLimit, labelCount, featureCount, rangePartitioning, iterationWaitTime
+    )
+  }
+
+  /**
+    * Applies online multiclass classification for a [[org.apache.flink.streaming.api.scala.DataStream]] of sparse
+    * vectors. For vectors with labels, it updates the model "passive-aggressively",
+    * for vectors without label predicts its labels based on the model.
+    *
+    * Unlabelled vectors are marked by a Long identifier which is used for giving predictions.
+    *
+    * Labels should be indexed from 0.
+    *
+    * Note that the order could be mixed, i.e. it's possible to predict based on some model parameters updated, while
+    * others not.
+    *
+    * @param inputSource
+    * [[org.apache.flink.streaming.api.scala.DataStream]] of labelled and unlabelled vector.
+    * The label is marked with an [[Option]].
+    * @param workerParallelism
+    * Number of worker instances for Parameter Server.
+    * @param psParallelism
+    * Number of Parameter Server instances.
+    * @param passiveAggressiveMethod
+    * Method for Passive Aggressive training.
+    * @param pullLimit
+    * Limit of unanswered pulls at a worker instance.
+    * @param labelCount
+    * Number of possible labels.
+    * @param iterationWaitTime
+    * Time to wait for new messages at worker. If set to 0, the job will run infinitely.
+    * PS is implemented with a Flink iteration, and Flink does not know when the iteration finishes,
+    * so this is how the job can finish.
+    * @return
+    * Stream of Parameter Server model updates and predicted values.
+    */
+  def transformMulticlassWithLongId(model: Option[DataStream[(Int, Vector[Double])]] = None)
+                                   (inputSource: DataStream[OptionLabeledVector[Int]],
+                                    workerParallelism: Int,
+                                    psParallelism: Int,
+                                    passiveAggressiveMethod: PassiveAggressiveAlgorithm[Vector[Double], Int, CSCMatrix[Double]],
+                                    pullLimit: Int,
+                                    labelCount: Int,
+                                    featureCount: Int,
+                                    rangePartitioning: Boolean,
+                                    iterationWaitTime: Long)
+  : DataStream[Either[(Long, Int), (FeatureId, Vector[Double])]] =
+    transformMulticlassGen[Long](model)(inputSource, workerParallelism, psParallelism,
+      passiveAggressiveMethod, pullLimit, labelCount, featureCount, rangePartitioning, iterationWaitTime)
 
   /**
     * Applies online multiclass classification for a [[org.apache.flink.streaming.api.scala.DataStream]] of sparse
@@ -61,7 +168,7 @@ object PassiveAggressiveParameterServer {
     * Stream of Parameter Server model updates and predicted values.
     */
   def transformMulticlass(model: Option[DataStream[(Int, Vector[Double])]] = None)
-                         (inputSource: DataStream[(SparseVector[Double], Option[Int])],
+                         (inputSource: DataStream[OptionLabeledVector[Int]],
                           workerParallelism: Int,
                           psParallelism: Int,
                           passiveAggressiveMethod: PassiveAggressiveAlgorithm[Vector[Double], Int, CSCMatrix[Double]],
@@ -70,24 +177,9 @@ object PassiveAggressiveParameterServer {
                           featureCount: Int,
                           rangePartitioning: Boolean,
                           iterationWaitTime: Long)
-  : DataStream[Either[(SparseVector[Double], Int), (FeatureId, Vector[Double])]] = {
-    val multiModelBuilder = new ModelBuilder[Vector[Double], CSCMatrix[Double]] {
-      override def buildModel(params: Iterable[(FeatureId, Vector[Double])],
-                              featureCount: Int): CSCMatrix[Double] = {
-        val builder = new CSCMatrix.Builder[Double](featureCount, labelCount)
-        params.foreach { case (i, vector) => vector.foreachPair((j, v) => builder.add(i, j, v)) }
-
-        builder.result
-      }
-    }
-
-    transformGeneric[Vector[Double], Int, CSCMatrix[Double]](model)(
-      initMulti(labelCount), _ + _, multiModelBuilder
-    )(
-      inputSource, workerParallelism, psParallelism, passiveAggressiveMethod,
-      pullLimit, labelCount, featureCount, rangePartitioning, iterationWaitTime
-    )
-  }
+  : DataStream[Either[(SparseVector[Double], Int), (FeatureId, Vector[Double])]] =
+    transformMulticlassGen[SparseVector[Double]](model)(inputSource, workerParallelism, psParallelism,
+      passiveAggressiveMethod, pullLimit, labelCount, featureCount, rangePartitioning, iterationWaitTime)
 
   /**
     * Applies online binary classification for a [[org.apache.flink.streaming.api.scala.DataStream]] of sparse vectors.
@@ -116,7 +208,7 @@ object PassiveAggressiveParameterServer {
     * Stream of Parameter Server model updates and predicted values.
     */
   def transformBinary(model: Option[DataStream[(Int, Double)]] = None)
-                     (inputSource: DataStream[(SparseVector[Double], Option[Boolean])],
+                     (inputSource: DataStream[OptionLabeledVector[Boolean]],
                       workerParallelism: Int,
                       psParallelism: Int,
                       passiveAggressiveMethod: PassiveAggressiveAlgorithm[Double, Boolean, Vector[Double]],
@@ -131,12 +223,12 @@ object PassiveAggressiveParameterServer {
       override def buildModel(params: Iterable[(FeatureId, Double)],
                               featureCount: Int): Vector[Double] = {
         val builder = new VectorBuilder[Double](featureCount)
-        params.foreach{case(i, v) => builder.add(i, v)}
+        params.foreach { case (i, v) => builder.add(i, v) }
         builder.toSparseVector(keysAlreadyUnique = true)
       }
     }
 
-    transformGeneric[Double, Boolean, Vector[Double]](model)(
+    transformGeneric[Double, Boolean, Vector[Double], OptionLabeledVector[Boolean], SparseVector[Double]](model)(
       initBinary, _ + _, binaryModelBuilder
     )(
       inputSource, workerParallelism, psParallelism, passiveAggressiveMethod,
@@ -144,30 +236,35 @@ object PassiveAggressiveParameterServer {
     )
   }
 
+  private def getVector[LabelType](vector: OptionLabeledVector[LabelType]): SparseVector[Double] = {
+    vector match {
+      case Left((vec, _)) => vec
+      case Right((_, vec)) => vec
+    }
+  }
+
   private def transformGeneric
-  [Param, Label, Model](model: Option[DataStream[(Int, Param)]] = None)
-                       (init: Int => Param,
-                        add: (Param, Param) => Param,
-                        modelBuilder: ModelBuilder[Param, Model])
-                       (inputSource: DataStream[(SparseVector[Double], Option[Label])],
-                        workerParallelism: Int,
-                        psParallelism: Int,
-                        passiveAggressiveMethod: PassiveAggressiveAlgorithm[Param, Label, Model],
-                        pullLimit: Int,
-                        labelCount: Int,
-                        featureCount: Int,
-                        // TODO avoid using boolean
-                        rangePartitioning: Boolean,
-                        iterationWaitTime: Long)
-                       (implicit
-                        tiParam: TypeInformation[Param],
-                        tiLabel: TypeInformation[Label])
-  : DataStream[Either[(SparseVector[Double], Label), (FeatureId, Param)]]
-
-  = {
-
-    type LabeledVector = (SparseVector[Double], Label)
-    type OptionLabeledVector = (SparseVector[Double], Option[Label])
+  [Param, Label, Model, Vec, VecId](model: Option[DataStream[(Int, Param)]] = None)
+                                   (init: Int => Param,
+                                    add: (Param, Param) => Param,
+                                    modelBuilder: ModelBuilder[Param, Model])
+                                   (inputSource: DataStream[Vec],
+                                    workerParallelism: Int,
+                                    psParallelism: Int,
+                                    passiveAggressiveMethod: PassiveAggressiveAlgorithm[Param, Label, Model],
+                                    pullLimit: Int,
+                                    labelCount: Int,
+                                    featureCount: Int,
+                                    // TODO avoid using boolean
+                                    rangePartitioning: Boolean,
+                                    iterationWaitTime: Long)
+                                   (implicit
+                                    tiParam: TypeInformation[Param],
+                                    tiLabel: TypeInformation[Label],
+                                    tiVec: TypeInformation[Vec],
+                                    tiVecId: TypeInformation[VecId],
+                                    ev: OptionLabeledVectorWithId[Vec, VecId, Label])
+  : DataStream[Either[(VecId, Label), (FeatureId, Param)]] = {
 
     val serverLogic =
       if (rangePartitioning) {
@@ -191,42 +288,46 @@ object PassiveAggressiveParameterServer {
       }
 
     val workerLogic = WorkerLogic.addPullLimiter( // adding pull limiter to avoid iteration deadlock
-      new WorkerLogic[OptionLabeledVector, Param, LabeledVector] {
+      new WorkerLogic[Vec, Param, (VecId, Label)] {
 
-        val paramWaitingQueue = new mutable.HashMap[Int, mutable.Queue[(OptionLabeledVector, ArrayBuffer[(Int, Param)])]]()
+        val paramWaitingQueue = new mutable.HashMap[Int,
+          mutable.Queue[(Vec, ArrayBuffer[(Int, Param)])]]()
 
-        override def onRecv(data: OptionLabeledVector,
-                            ps: ParameterServerClient[Param, LabeledVector]): Unit = data match {
+        override def onRecv(data: Vec,
+                            ps: ParameterServerClient[Param, (VecId, Label)]): Unit = {
           // pulling parameters and buffering data while waiting for parameters
-          case (vector: SparseVector[Double], label) =>
-            val restedData = (vector, label)
-            // buffer to store the already received parameters
-            val waitingValues = new ArrayBuffer[(Int, Param)]()
-            //            vector.activeKeysIterator
-            // based on the official recommendation the activeIterator was optimized the following way:
-            //    https://github.com/scalanlp/breeze/wiki/Data-Structures#efficiently-iterating-over-a-sparsevector
-            (0 until vector.activeSize).map(offset => vector.indexAt(offset))
-              .foreach(k => {
-                paramWaitingQueue.getOrElseUpdate(k, mutable.Queue[(OptionLabeledVector, ArrayBuffer[(Int, Param)])]())
-                  .enqueue((restedData, waitingValues))
-                ps.pull(k)
-              })
+
+          val vector = ev.vector(data)
+
+          // buffer to store the already received parameters
+          val waitingValues = new ArrayBuffer[(Int, Param)]()
+          //            vector.activeKeysIterator
+          // based on the official recommendation the activeIterator was optimized the following way:
+          //    https://github.com/scalanlp/breeze/wiki/Data-Structures#efficiently-iterating-over-a-sparsevector
+          (0 until vector.activeSize).map(offset => vector.indexAt(offset))
+            .foreach(k => {
+              paramWaitingQueue.getOrElseUpdate(k,
+                mutable.Queue[(Vec, ArrayBuffer[(Int, Param)])]())
+                .enqueue((data, waitingValues))
+              ps.pull(k)
+            })
         }
 
         override def onPullRecv(paramId: Int,
                                 modelValue: Param,
-                                ps: ParameterServerClient[Param, LabeledVector]) {
+                                ps: ParameterServerClient[Param, (VecId, Label)]) {
           // store the received parameters and train/predict when all corresponding parameters arrived for a vector
           val q = paramWaitingQueue(paramId)
           val (restedData, waitingValues) = q.dequeue()
           waitingValues += paramId -> modelValue
-          if (waitingValues.size == restedData._1.activeSize) {
+
+          val vector = ev.vector(restedData)
+          if (waitingValues.size == vector.activeSize) {
             // we have received all the parameters
-            val (vector, optionLabel) = restedData
 
             val model: Model = modelBuilder.buildModel(waitingValues, vector.length)
 
-            optionLabel match {
+            ev.label(restedData) match {
               case Some(label) =>
                 // we have a labelled vector, so we update the model
                 passiveAggressiveMethod.delta(vector, model, label)
@@ -235,7 +336,7 @@ object PassiveAggressiveParameterServer {
                   }
               case None =>
                 // we have an unlabelled vector, so we predict based on the model
-                ps.output(vector, passiveAggressiveMethod.predict(vector, model))
+                ps.output(ev.id(restedData), passiveAggressiveMethod.predict(vector, model))
             }
           }
           if (q.isEmpty) paramWaitingQueue.remove(paramId)
@@ -250,8 +351,8 @@ object PassiveAggressiveParameterServer {
 
     val modelUpdates = model match {
       case Some(m) => FlinkParameterServer.transformWithModelLoad[
-        OptionLabeledVector, Param, (FeatureId, Param),
-        (SparseVector[Double], Label)](m)(
+        Vec, Param, (FeatureId, Param),
+        (VecId, Label)](m)(
         inputSource, workerLogic, serverLogic,
         paramPartitioner,
         wInPartition,
@@ -259,8 +360,8 @@ object PassiveAggressiveParameterServer {
         psParallelism,
         iterationWaitTime)
       case None => FlinkParameterServer.transform[
-        OptionLabeledVector, Param, (FeatureId, Param),
-        (SparseVector[Double], Label), PSToWorker[Param], WorkerToPS[Param]](
+        Vec, Param, (FeatureId, Param),
+        (VecId, Label), PSToWorker[Param], WorkerToPS[Param]](
         inputSource, workerLogic, serverLogic,
         paramPartitioner,
         wInPartition,
@@ -313,5 +414,59 @@ object PassiveAggressiveParameterServer {
 
   }
 
+  private trait OptionLabeledVectorWithId[V, Id, Label] extends Serializable {
+    def vector(v: V): SparseVector[Double]
+
+    def label(v: V): Option[Label]
+
+    def id(v: V): Id
+  }
+
+  private implicit def optionLabeledMultiEvLong:
+  OptionLabeledVectorWithId[OptionLabeledVector[Int], Long, Int] =
+    optionLabeledVecEvLongId[Int]
+
+  private implicit def optionLabeledMultiEv:
+  OptionLabeledVectorWithId[OptionLabeledVector[Int], SparseVector[Double], Int] =
+    optionLabeledVecEv[Int]
+
+  private implicit def optionLabeledBinaryEv:
+  OptionLabeledVectorWithId[OptionLabeledVector[Boolean], SparseVector[Double], Boolean] =
+    optionLabeledVecEv[Boolean]
+
+  private implicit def optionLabeledVecEv[Label]:
+  OptionLabeledVectorWithId[OptionLabeledVector[Label], SparseVector[Double], Label] =
+    new OptionLabeledVectorWithId[OptionLabeledVector[Label], SparseVector[Double], Label] {
+      override def vector(v: OptionLabeledVector[Label]): SparseVector[Double] = v match {
+        case Left((vec, _)) => vec
+        case Right((_, vec)) => vec
+      }
+
+      override def label(v: OptionLabeledVector[Label]): Option[Label] = v match {
+        case Left((_, lab)) => Some(lab)
+        case _ => None
+      }
+
+      override def id(v: OptionLabeledVector[Label]): SparseVector[Double] = vector(v)
+    }
+
+  private implicit def optionLabeledVecEvLongId[Label]:
+  OptionLabeledVectorWithId[OptionLabeledVector[Label], Long, Label] =
+    new OptionLabeledVectorWithId[OptionLabeledVector[Label], Long, Label] {
+      override def vector(v: OptionLabeledVector[Label]): SparseVector[Double] = v match {
+        case Left((vec, _)) => vec
+        case Right((_, vec)) => vec
+      }
+
+      override def label(v: OptionLabeledVector[Label]): Option[Label] = v match {
+        case Left((_, lab)) => Some(lab)
+        case _ => None
+      }
+
+      override def id(v: OptionLabeledVector[Label]): Long = v match {
+        case Right((id, _)) => id
+        case Left(_) => throw new IllegalArgumentException("Only unlabelled vectors have id.")
+      }
+    }
 }
 
