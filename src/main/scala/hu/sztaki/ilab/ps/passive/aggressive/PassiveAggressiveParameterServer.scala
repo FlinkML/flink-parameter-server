@@ -12,7 +12,7 @@ import hu.sztaki.ilab.ps.server.sender.SimplePSSender
 import hu.sztaki.ilab.ps.{FlinkParameterServer, ParameterServerClient, WorkerLogic}
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.streaming.api.scala._
-import org.slf4j.LoggerFactory
+//import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -22,7 +22,7 @@ class PassiveAggressiveParameterServer
 
 object PassiveAggressiveParameterServer {
 
-  private val log = LoggerFactory.getLogger(classOf[PassiveAggressiveParameterServer])
+//  private val log = LoggerFactory.getLogger(classOf[PassiveAggressiveParameterServer])
 
   type FeatureId = Int
 
@@ -236,13 +236,6 @@ object PassiveAggressiveParameterServer {
     )
   }
 
-  private def getVector[LabelType](vector: OptionLabeledVector[LabelType]): SparseVector[Double] = {
-    vector match {
-      case Left((vec, _)) => vec
-      case Right((_, vec)) => vec
-    }
-  }
-
   private def transformGeneric
   [Param, Label, Model, Vec, VecId](model: Option[DataStream[(Int, Param)]] = None)
                                    (init: Int => Param,
@@ -279,9 +272,9 @@ object PassiveAggressiveParameterServer {
       } else {
         val partitonerFunction = (paramId: Int) => Math.abs(paramId) % psParallelism
         val p: WorkerToPS[Param] => Int = {
-          case WorkerToPS(partitionId, msg) => msg match {
+          case WorkerToPS(_, msg) => msg match {
             case Left(Pull(paramId)) => partitonerFunction(paramId)
-            case Right(Push(paramId, delta)) => partitonerFunction(paramId)
+            case Right(Push(paramId, _)) => partitonerFunction(paramId)
           }
         }
         p
@@ -346,7 +339,7 @@ object PassiveAggressiveParameterServer {
 
 
     val wInPartition: PSToWorker[Param] => Int = {
-      case PSToWorker(workerPartitionIndex, msg) => workerPartitionIndex
+      case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 
     val modelUpdates = model match {
@@ -381,9 +374,9 @@ object PassiveAggressiveParameterServer {
     val partitonerFunction = (paramId: Int) => Math.abs(paramId) / partitionSize
 
     val paramPartitioner: WorkerToPS[P] => Int = {
-      case WorkerToPS(partitionId, msg) => msg match {
+      case WorkerToPS(_, msg) => msg match {
         case Left(Pull(paramId)) => partitonerFunction(paramId)
-        case Right(Push(paramId, delta)) => partitonerFunction(paramId)
+        case Right(Push(paramId, _)) => partitonerFunction(paramId)
       }
     }
 
@@ -422,6 +415,19 @@ object PassiveAggressiveParameterServer {
     def id(v: V): Id
   }
 
+  private abstract class OptionLabeledVectorWithIdImpl[Label, Id]
+    extends OptionLabeledVectorWithId[OptionLabeledVector[Label], Id, Label] {
+      override def vector(v: OptionLabeledVector[Label]): SparseVector[Double] = v match {
+        case Left((vec, _)) => vec
+        case Right((_, vec)) => vec
+      }
+
+      override def label(v: OptionLabeledVector[Label]): Option[Label] = v match {
+        case Left((_, lab)) => Some(lab)
+        case _ => None
+      }
+    }
+
   private implicit def optionLabeledMultiEvLong:
   OptionLabeledVectorWithId[OptionLabeledVector[Int], Long, Int] =
     optionLabeledVecEvLongId[Int]
@@ -436,32 +442,14 @@ object PassiveAggressiveParameterServer {
 
   private implicit def optionLabeledVecEv[Label]:
   OptionLabeledVectorWithId[OptionLabeledVector[Label], SparseVector[Double], Label] =
-    new OptionLabeledVectorWithId[OptionLabeledVector[Label], SparseVector[Double], Label] {
-      override def vector(v: OptionLabeledVector[Label]): SparseVector[Double] = v match {
-        case Left((vec, _)) => vec
-        case Right((_, vec)) => vec
-      }
-
-      override def label(v: OptionLabeledVector[Label]): Option[Label] = v match {
-        case Left((_, lab)) => Some(lab)
-        case _ => None
-      }
+    new OptionLabeledVectorWithIdImpl[Label, SparseVector[Double]] {
 
       override def id(v: OptionLabeledVector[Label]): SparseVector[Double] = vector(v)
     }
 
   private implicit def optionLabeledVecEvLongId[Label]:
   OptionLabeledVectorWithId[OptionLabeledVector[Label], Long, Label] =
-    new OptionLabeledVectorWithId[OptionLabeledVector[Label], Long, Label] {
-      override def vector(v: OptionLabeledVector[Label]): SparseVector[Double] = v match {
-        case Left((vec, _)) => vec
-        case Right((_, vec)) => vec
-      }
-
-      override def label(v: OptionLabeledVector[Label]): Option[Label] = v match {
-        case Left((_, lab)) => Some(lab)
-        case _ => None
-      }
+    new OptionLabeledVectorWithIdImpl[Label, Long] {
 
       override def id(v: OptionLabeledVector[Label]): Long = v match {
         case Right((id, _)) => id
