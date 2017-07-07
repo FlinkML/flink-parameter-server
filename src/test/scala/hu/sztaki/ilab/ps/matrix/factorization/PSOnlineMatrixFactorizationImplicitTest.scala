@@ -22,11 +22,12 @@ object PSOnlineMatrixFactorizationImplicitTest{
   type Rating = (UserId, ItemId, Double)
 
   val milisecBetweenRatings = 1000
-  val numIterations = 10
 
   val numFactors = 10
   val learningRate = 0.01
   val pullLimit = 100
+  val minRange = -0.1
+  val maxRange = 0.1
   val workerParallelism = 4
   val psParallelism = 3
   val iterationWaitTime = 10000
@@ -41,7 +42,7 @@ object PSOnlineMatrixFactorizationImplicitTest{
     val data = env.readTextFile(input_file_name)
 
     val lastFM_RichFlatMap = data.flatMap(new RichFlatMapFunction[String, (Int, Int, Double)] {
-      var count = 0
+
       override def flatMap(value: String, out: Collector[(ItemId, ItemId, Double)]): Unit = {
         val fieldsArray = value.split(" ")
         val r = Tuple3(fieldsArray(1).toInt, fieldsArray(2).toInt, 1.0)
@@ -53,11 +54,12 @@ object PSOnlineMatrixFactorizationImplicitTest{
       }
     })
 
-
     PsOnlineMatrixFactorization.psOnlineMF(
       lastFM_RichFlatMap,
       numFactors,
       learningRate,
+      minRange,
+      maxRange,
       pullLimit,
       workerParallelism,
       psParallelism,

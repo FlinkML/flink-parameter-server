@@ -1,7 +1,7 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
 import hu.sztaki.ilab.ps.matrix.factorization.Utils.{ItemId, UserId}
-import hu.sztaki.ilab.ps.matrix.factorization.factors.{RandomFactorInitializerDescriptor, SGDUpdater}
+import hu.sztaki.ilab.ps.matrix.factorization.factors.{RangedRandomFactorInitializerDescriptor, SGDUpdater}
 import hu.sztaki.ilab.ps.server.SimplePSLogic
 import hu.sztaki.ilab.ps.{FlinkParameterServer, ParameterServerClient, WorkerLogic}
 import org.apache.flink.streaming.api.scala._
@@ -25,13 +25,15 @@ object PsOnlineMatrixFactorization{
   def psOnlineMF(src: DataStream[Rating],
                   numFactors: Int,
                   learningRate: Double,
+                  minRange: Double,
+                  maxRange: Double,
                   pullLimit: Int,
                   workerParallelism: Int,
                   psParallelism: Int,
                   iterationWaitTime: Long): DataStream[Either[(UserId, Vector), (ItemId, Vector)]] = {
 
     // initialization method and update method
-    val factorInitDesc = RandomFactorInitializerDescriptor(numFactors)
+    val factorInitDesc = RangedRandomFactorInitializerDescriptor(numFactors, minRange, maxRange)
 
     val factorUpdate = new SGDUpdater(learningRate)
 
@@ -51,6 +53,7 @@ object PsOnlineMatrixFactorization{
         val user = UserVector.getOrElseUpdate(rate._1, factorInitDesc.open().nextFactor(rate._1))
         val item = paramValue
         val (userDelta, itemDelta) = factorUpdate.delta(rate._3, user, item)
+
 
         UserVector(rate._1) = user.zip(userDelta).map(r => r._1 + r._2)
 

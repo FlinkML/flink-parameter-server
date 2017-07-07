@@ -1,7 +1,7 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
 import hu.sztaki.ilab.ps.matrix.factorization.Utils._
-import hu.sztaki.ilab.ps.matrix.factorization.factors.{FactorInitializer, RandomFactorInitializerDescriptor, SGDUpdater}
+import hu.sztaki.ilab.ps.matrix.factorization.factors.{FactorInitializer, RangedRandomFactorInitializerDescriptor, SGDUpdater}
 import hu.sztaki.ilab.ps.{FlinkParameterServer, ParameterServerClient, WorkerLogic}
 import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction}
 import org.apache.flink.streaming.api.scala._
@@ -35,6 +35,8 @@ object PSOfflineMatrixFactorization {
                   numFactors: Int,
                   learningRate: Double,
                   iterations: Int,
+                  minRange: Double,
+                  maxRange: Double,
                   pullLimit: Int,
                   workerParallelism: Int,
                   psParallelism: Int,
@@ -62,7 +64,7 @@ object PSOfflineMatrixFactorization {
     )
 
     // initialization method and update method
-    val factorInitDesc = RandomFactorInitializerDescriptor(numFactors)
+    val factorInitDesc = RangedRandomFactorInitializerDescriptor(numFactors, minRange, maxRange)
 
     // fixme add lambda
     val factorUpdate = new SGDUpdater(learningRate)
