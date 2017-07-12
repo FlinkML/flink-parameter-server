@@ -62,6 +62,8 @@ class PSOfflineMatrixFactorizationTest extends FlatSpec with PropertyChecks with
       numFactors = numFactors,
       learningRate = 0.01,
       iterations = 10,
+      minRange = 0.0,
+      maxRange = 1.0,
       pullLimit = 10,
       workerParallelism = 4,
       psParallelism = 3,
