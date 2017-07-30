@@ -9,9 +9,6 @@ import org.apache.flink.streaming.api.scala._
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-/**
-  * Created by bdaniel on 2017.04.21..
-  */
 class PsOnlineMatrixFactorization {
 }
 
@@ -54,7 +51,6 @@ object PsOnlineMatrixFactorization{
         val item = paramValue
         val (userDelta, itemDelta) = factorUpdate.delta(rate._3, user, item)
 
-
         UserVector(rate._1) = user.zip(userDelta).map(r => r._1 + r._2)
 
         ps.output(rate._1, UserVector(rate._1))
@@ -73,7 +69,7 @@ object PsOnlineMatrixFactorization{
       x => factorInitDesc.open().nextFactor(x), { (vec, deltaVec) => vec.zip(deltaVec).map(x => x._1 + x._2)}
     )
 
-    val modelUpdates = FlinkParameterServer.parameterServerTransform(
+    val modelUpdates = FlinkParameterServer.transform(
       src,
       WorkerLogic.addPullLimiter(workerLogic, pullLimit),
       serverLogic,

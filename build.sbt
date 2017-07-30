@@ -10,7 +10,8 @@ lazy val breezeVersion = "0.13"
 lazy val commonDependencies = Seq(
   "org.scalatest" % "scalatest_2.11" % "3.0.1" % "test",
   "org.scalacheck" %% "scalacheck" % "1.13.4" % "test",
-  "org.slf4j" % "slf4j-api" % "1.7.22"
+  "org.slf4j" % "slf4j-api" % "1.7.22",
+  "com.typesafe" % "config" % "1.3.1"
 )
 
 lazy val flinkDependencies = Seq(

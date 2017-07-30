@@ -6,14 +6,19 @@ import prop._
 import hu.sztaki.ilab.ps.FlinkParameterServer._
 import hu.sztaki.ilab.ps.client.receiver.SimpleWorkerReceiver
 import hu.sztaki.ilab.ps.client.sender.SimpleWorkerSender
-import hu.sztaki.ilab.ps.entities.{PSToWorker, WorkerToPS}
+import hu.sztaki.ilab.ps.entities.{PSToWorker, Pull, Push, WorkerToPS}
 import hu.sztaki.ilab.ps.server.SimplePSLogic
 import hu.sztaki.ilab.ps.server.receiver.SimplePSReceiver
 import hu.sztaki.ilab.ps.server.sender.SimplePSSender
+import hu.sztaki.ilab.ps.test.utils.FlinkTestUtils
+import hu.sztaki.ilab.ps.test.utils.FlinkTestUtils.SuccessException
 import org.apache.flink.api.common.functions.Partitioner
+import org.apache.flink.streaming.api.functions.sink.{RichSinkFunction, SinkFunction}
 import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+import scala.util.Random
 
 class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
 
@@ -63,7 +68,7 @@ class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
     }
 
     val outputDS =
-      parameterServerTransform(
+      transform(
         // @todo add real source
         src,
         // @todo add real worker logic
@@ -94,7 +99,8 @@ class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
         new SimpleWorkerReceiver[P],
         new SimpleWorkerSender[P],
         new SimplePSReceiver[P],
-        new SimplePSSender[P]
+        new SimplePSSender[P],
+        10000
       )
 
     outputDS.map(
@@ -111,4 +117,91 @@ class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
 
   }
 
+
+  "model load" should "work" in {
+
+    type P = Long
+    type T = Int
+    type PSOut = (Int, P)
+    type WOut = Unit
+
+    val env = StreamExecutionEnvironment.getExecutionEnvironment
+    env.setParallelism(4)
+    env.setBufferTimeout(10)
+    val iterWaitTime = 4000
+
+    val numParams = 50
+
+    val workerParallelism = 4
+    val psParallelism = 3
+    val modelSrcParallelism = 2
+    val dataSrcParallelism = 3
+
+    val initModel: Seq[(Int, P)] = Seq.tabulate(numParams)(i => (i, i * 10))
+    val expectedOutModel: Seq[(Int, P)] = Seq.tabulate(numParams)(i => (i, i * 10 + 3))
+
+    val trainingData: Seq[Int] = Random.shuffle(
+      (0 until numParams).flatMap(i => Iterable(i, i, i))
+    )
+
+    val modelSrc = env.fromCollection(initModel).shuffle.map(x => x).setParallelism(modelSrcParallelism)
+    val dataSrc = env.fromCollection(trainingData).shuffle.map(x => x).setParallelism(dataSrcParallelism)
+
+    val outputDS: DataStream[Either[WOut, PSOut]] =
+      FlinkParameterServer.transformWithModelLoad(modelSrc)(
+        dataSrc,
+        new WorkerLogic[T, P, WOut] {
+          override def onRecv(data: Int, ps: ParameterServerClient[P, WOut]): Unit = {
+            ps.pull(data)
+          }
+
+          override def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[P, WOut]): Unit = {
+            ps.push(paramId, 1L)
+          }
+        },
+        new ParameterServerLogic[P, PSOut] {
+          val params = new mutable.HashMap[Int, P]()
+
+          override def onPullRecv(id: T, workerPartitionIndex: T, ps: ParameterServer[P, (T, P)]): WOut = {
+            ps.answerPull(id, params.getOrElseUpdate(id, 0), workerPartitionIndex)
+          }
+
+          override def onPushRecv(id: T, deltaUpdate: P, ps: ParameterServer[P, (T, P)]): WOut = {
+            params.put(id, params.getOrElseUpdate(id, 0) + deltaUpdate)
+          }
+
+          override def close(ps: ParameterServer[P, (T, P)]): WOut = {
+            params.foreach(ps.output)
+          }
+        }, {
+          case WorkerToPS(_, msg) => msg match {
+            case Left(Pull(id)) => id % psParallelism
+            case Right(Push(id, _)) => id % psParallelism
+          }
+        }, {
+          case PSToWorker(wIdx, _) => wIdx
+        },
+        workerParallelism, psParallelism, iterWaitTime
+      )
+
+    outputDS.addSink(new RichSinkFunction[Either[WOut, (Int, P)]] {
+      val result = new ArrayBuffer[(Int, P)]
+      override def invoke(value: Either[WOut, (Int, P)]): Unit = {
+        value match {
+          case Right(param) => result.append(param)
+          case _ => throw new IllegalStateException()
+        }
+      }
+
+      override def close(): Unit = {
+        throw new SuccessException[Seq[(Int, P)]](result)
+      }
+    }).setParallelism(1)
+
+    FlinkTestUtils.executeWithSuccessCheck[Seq[(Int, P)]](env) {
+      result =>
+        result.sorted should be (expectedOutModel)
+    }
+
+  }
 }

@@ -8,17 +8,6 @@ class SimplePSLogicTest extends FlatSpec with PropertyChecks with Matchers {
   type P = Int
   type PSOut = (Int, Int)
 
-  "If a pull is not prevented by push it" should "throw exeption" in {
-    val testPsLogic = new SimplePSLogic[P]((x: Int) => x, ((x: P, y: P) => x))
-    a[IllegalStateException] should be thrownBy {
-      testPsLogic.onPushRecv(42, 42, new ParameterServer[P, PSOut] {
-        override def answerPull(id: P, value: P, workerPartitionIndex: P): Unit = {}
-
-        override def output(out: (P, P)): Unit = {}
-      })
-    }
-  }
-
   "Model's state initilaization" should "be working" in {
     val testPsLogic = new SimplePSLogic[P]((x: Int) => 23, (x: P, y: P) => y)
     testPsLogic.onPullRecv(42, 42, new ParameterServer[P, PSOut] {

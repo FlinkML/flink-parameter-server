@@ -4,7 +4,7 @@ import hu.sztaki.ilab.ps.{ParameterServer, ParameterServerLogic}
 
 import scala.collection.mutable
 
-class SimplePSLogic[P](paramInit: => Int => P, paramUpdate: => (P, P) => P) extends ParameterServerLogic[P, (Int, P)] {
+class SimplePSLogicWithClose[P](paramInit: => Int => P, paramUpdate: => (P, P) => P) extends ParameterServerLogic[P, (Int, P)] {
   val params = new mutable.HashMap[Integer, P]()
 
   @transient lazy val init: (Int) => P = paramInit
@@ -21,6 +21,12 @@ class SimplePSLogic[P](paramInit: => Int => P, paramUpdate: => (P, P) => P) exte
         deltaUpdate
     }
     params += ((id, c))
-    ps.output((id, c))
+  }
+
+  /**
+    * Method called when processing is finished.
+    */
+  override def close(ps: ParameterServer[P, (Int, P)]): Unit = {
+    params.foreach{case(id, c) => ps.output(id, c)}
   }
 }

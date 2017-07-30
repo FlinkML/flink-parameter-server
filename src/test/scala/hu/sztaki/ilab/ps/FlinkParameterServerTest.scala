@@ -31,7 +31,7 @@ class FlinkParameterServerTest extends FlatSpec with PropertyChecks with Matcher
     type WOut = Unit
 
     val outputDS =
-      parameterServerTransform(src,
+      transform(src,
         new WorkerLogic[Int, P, WOut] {
           val dataQ = new mutable.Queue[Int]()
 
@@ -97,7 +97,8 @@ class FlinkParameterServerTest extends FlatSpec with PropertyChecks with Matcher
                                     collectAnswerMsg: ((Int, Array[String])) => Unit): Unit = {
             collectAnswerMsg((id, (workerPartitionIndex +: value).map(_.toString).toArray))
           }
-        }
+        },
+        5000
       )
 
     outputDS.print()
