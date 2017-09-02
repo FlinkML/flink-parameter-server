@@ -1,35 +1,31 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
-import hu.sztaki.ilab.ps.matrix.factorization.PsOnlineMatrixFactorization.Vector
-import hu.sztaki.ilab.ps.matrix.factorization.Utils.{ItemId, UserId}
-import org.apache.flink.api.common.functions.{RichFlatMapFunction, RichMapFunction}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.Rating
+import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, UserId}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
+import org.apache.flink.api.common.functions.RichFlatMapFunction
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.util.Collector
 
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
-import scala.util.Random
 
-/**
-  * Created by bdaniel on 2017.04.30..
-  */
+
 class PSOnlineMatrixFactorizationImplicitTest {
 
 }
 
 object PSOnlineMatrixFactorizationImplicitTest{
-  type Rating = (UserId, ItemId, Double)
-
-  val milisecBetweenRatings = 1000
 
   val numFactors = 10
+  val rangeMin = -0.1
+  val rangeMax = 0.1
   val learningRate = 0.01
-  val pullLimit = 100
-  val minRange = -0.1
-  val maxRange = 0.1
+  val userMemory = 128
+  val negativeSampleRate = 9
+  val pullLimit = 1500
   val workerParallelism = 4
-  val psParallelism = 3
+  val psParallelism = 4
   val iterationWaitTime = 10000
 
   def main(args: Array[String]): Unit = {
@@ -41,33 +37,31 @@ object PSOnlineMatrixFactorizationImplicitTest{
     val env = StreamExecutionEnvironment.getExecutionEnvironment
     val data = env.readTextFile(input_file_name)
 
-    val lastFM_RichFlatMap = data.flatMap(new RichFlatMapFunction[String, (Int, Int, Double)] {
+    val lastFM = data.flatMap(new RichFlatMapFunction[String, Rating] {
 
-      override def flatMap(value: String, out: Collector[(ItemId, ItemId, Double)]): Unit = {
+      override def flatMap(value: String, out: Collector[Rating]): Unit = {
         val fieldsArray = value.split(" ")
-        val r = Tuple3(fieldsArray(1).toInt, fieldsArray(2).toInt, 1.0)
+        val r = Rating.fromTuple(fieldsArray(1).toInt, fieldsArray(2).toInt, 1.0)
         out.collect(r)
-
-        for(i <- 1 to 40){
-         out.collect(r._1, 1+Random.nextInt(37988) , 0.0)
-        }
       }
     })
 
-    PsOnlineMatrixFactorization.psOnlineMF(
-      lastFM_RichFlatMap,
+    PSOnlineMatrixFactorization.psOnlineMF(
+      lastFM,
       numFactors,
+      rangeMin,
+      rangeMax,
       learningRate,
-      minRange,
-      maxRange,
+      negativeSampleRate,
+      userMemory,
       pullLimit,
       workerParallelism,
       psParallelism,
       iterationWaitTime)
         .addSink(new RichSinkFunction[Either[(UserId, Vector), (ItemId, Vector)]] {
 
-          val userVectors = new mutable.HashMap[UserId, Array[Double]]
-          val itemVectors = new mutable.HashMap[ItemId, Array[Double]]
+          val userVectors = new mutable.HashMap[UserId, Vector]
+          val itemVectors = new mutable.HashMap[ItemId, Vector]
 
           override def invoke(value: Either[(UserId, Vector), (ItemId, Vector)]): Unit = {
 
