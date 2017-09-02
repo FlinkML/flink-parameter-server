@@ -1,6 +1,8 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
-import hu.sztaki.ilab.ps.matrix.factorization.Utils.{ItemId, UserId}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.Rating
+import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, UserId}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 import hu.sztaki.ilab.ps.test.utils.FlinkTestUtils._
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction
 import org.apache.flink.streaming.api.scala._
@@ -18,28 +20,26 @@ object PSOfflineMatrixFactorizationTest {
   val numItems = 15
   val random = new Random(47L)
 
-  val ratings: Seq[(Int, Int, Double)] = Seq.fill(numberOfRatings)(
-    (random.nextInt(numUsers), random.nextInt(numItems), random.nextDouble())
+  val ratings: Seq[Rating] = Seq.fill(numberOfRatings)(
+    Rating.fromTuple(random.nextInt(numUsers), random.nextInt(numItems), random.nextDouble())
   )
     // eliminating duplicates
-    .groupBy(x => (x._1, x._2)).mapValues(_.head).toSeq.map(_._2)
+    .groupBy(x => (x.user, x.item)).mapValues(_.head).toSeq.map(_._2)
 
   def randomModelRMSE(numFactors: Int): Double = {
-    val users = ratings.map(_._1).distinct.map((_, Array.fill(numFactors)(Random.nextDouble()))).toMap
-    val items = ratings.map(_._2).distinct.map((_, Array.fill(numFactors)(Random.nextDouble()))).toMap
+    val users = ratings.map(_.user).distinct.map((_, Array.fill(numFactors)(Random.nextDouble()))).toMap
+    val items = ratings.map(_.item).distinct.map((_, Array.fill(numFactors)(Random.nextDouble()))).toMap
 
     computeRMSE(ratings, users, items)
   }
 
-  def computeRMSE(rs: Iterable[(Int, Int, Double)],
-                  users: collection.Map[Int, Array[Double]],
-                  items: collection.Map[Int, Array[Double]]): Double = {
-    def dot(xs: Array[Double], ys: Array[Double]): Double =
-      xs.zip(ys).map { case (x, y) => x * y }.sum
+  def computeRMSE(rs: Iterable[Rating],
+                  users: collection.Map[UserId, Vector],
+                  items: collection.Map[ItemId, Vector]): Double = {
 
     val sum = ratings.map {
-      case (u, i, r) =>
-        val diff = dot(users(u), items(i)) - r
+      rating =>
+        val diff = dotProduct(users(rating.user), items(rating.item)) - rating.rating
         diff * diff
     }.sum
 
@@ -56,17 +56,16 @@ class PSOfflineMatrixFactorizationTest extends FlatSpec with PropertyChecks with
 
     val src = env.fromCollection(ratings)
 
-    import PSOfflineMatrixFactorization._
     PSOfflineMatrixFactorization.psOfflineMF(
       src,
       numFactors = numFactors,
       learningRate = 0.01,
       iterations = 10,
-      minRange = 0.0,
-      maxRange = 1.0,
+      rangeMin = 0.0,
+      rangeMax = 1.0,
       pullLimit = 10,
       workerParallelism = 4,
-      psParallelism = 3,
+      psParallelism = 4,
       iterationWaitTime = 5000)
       .addSink(new RichSinkFunction[Either[(UserId, Vector), (ItemId, Vector)]] {
 
