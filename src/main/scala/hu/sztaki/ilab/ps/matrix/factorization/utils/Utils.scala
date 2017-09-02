@@ -51,3 +51,6 @@ class Partitioner[P](psParallelism: Int) extends Serializable{
     case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
   }
 }
+
+
+case class EOF() extends Serializable

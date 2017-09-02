@@ -1,16 +1,14 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
-import hu.sztaki.ilab.ps.matrix.factorization.factors.{RangedRandomFactorInitializerDescriptor, SGDUpdater}
+import hu.sztaki.ilab.ps.matrix.factorization.factors.RangedRandomFactorInitializerDescriptor
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Rating
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, UserId}
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
+import hu.sztaki.ilab.ps.matrix.factorization.workers.PSOnlineMatrixFactorizationWorker
 import hu.sztaki.ilab.ps.server.SimplePSLogic
-import hu.sztaki.ilab.ps.{FlinkParameterServer, ParameterServerClient, WorkerLogic}
+import hu.sztaki.ilab.ps.{FlinkParameterServer, WorkerLogic}
 import org.apache.flink.api.common.functions.Partitioner
 import org.apache.flink.streaming.api.scala._
-
-import scala.collection.mutable
-import scala.util.Random
 
 class PSOnlineMatrixFactorization {
 }
@@ -52,66 +50,8 @@ object PSOnlineMatrixFactorization{
 
     // initialization method and update method
     val factorInitDesc = RangedRandomFactorInitializerDescriptor(numFactors, rangeMin, rangeMax)
-    val factorUpdate = new SGDUpdater(learningRate)
 
-    val workerLogicBase = new WorkerLogic[Rating, Vector, (UserId, Vector)] {
-
-      val userVectors = new mutable.HashMap[UserId, Vector]
-      val ratingBuffer = new mutable.HashMap[ItemId, mutable.Queue[Rating]]()
-      val itemIds = new mutable.ArrayBuffer[ItemId]
-      val seenItemsSet = new mutable.HashMap[UserId, mutable.HashSet[ItemId]]
-      val seenItemsQueue = new mutable.HashMap[UserId, mutable.Queue[ItemId]]
-
-      override
-      def onPullRecv(paramId: ItemId, paramValue: Vector, ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
-        val rating = ratingBuffer synchronized {
-          ratingBuffer(paramId).dequeue()
-        }
-
-        val user = userVectors.getOrElseUpdate(rating.user, factorInitDesc.open().nextFactor(rating.user))
-        val item = paramValue
-        val (userDelta, itemDelta) = factorUpdate.delta(rating.rating, user, item)
-
-        userVectors(rating.user) = vectorSum(user, userDelta)
-
-        ps.output(rating.user, userVectors(rating.user))
-        ps.push(paramId, itemDelta)
-      }
-
-
-      override
-      def onRecv(data: Rating, ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
-
-        val seenSet = seenItemsSet.getOrElseUpdate(data.user, new mutable.HashSet)
-        val seenQueue = seenItemsQueue.getOrElseUpdate(data.user, new mutable.Queue)
-
-        if (seenQueue.length >= userMemory) {
-          seenSet -= seenQueue.dequeue()
-        }
-        seenSet += data.item
-        seenQueue += data.item
-
-        ratingBuffer synchronized {
-          for(_  <- 1 to Math.min(itemIds.length - seenSet.size, negativeSampleRate)){
-            var randomItemId = itemIds(Random.nextInt(itemIds.size))
-            while (seenSet contains randomItemId) {
-              randomItemId = itemIds(Random.nextInt(itemIds.size))
-            }
-            ratingBuffer(randomItemId).enqueue(Rating(data.user, randomItemId, 0.0, data.timestamp))
-            ps.pull(randomItemId)
-          }
-
-          ratingBuffer.getOrElseUpdate(
-            data.item,
-            {
-              itemIds += data.item
-              mutable.Queue[Rating]()
-            }).enqueue(data)
-        }
-
-        ps.pull(data.item)
-      }
-    }
+    val workerLogicBase = new PSOnlineMatrixFactorizationWorker(numFactors, rangeMin, rangeMax, learningRate, negativeSampleRate, userMemory)
 
     val workerLogic: WorkerLogic[Rating, Vector, (UserId, Vector)] =
       WorkerLogic.addBlockingPullLimiter(workerLogicBase, pullLimit)
