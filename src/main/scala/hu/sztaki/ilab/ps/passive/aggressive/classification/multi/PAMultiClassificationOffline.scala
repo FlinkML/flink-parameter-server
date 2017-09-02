@@ -371,7 +371,7 @@ object PAMultiClassificationOffline {
     }
 
 
-    val modelUpdates = FlinkParameterServer.parameterServerTransform(input, workerLogic, serverLogic,
+    val modelUpdates = FlinkParameterServer.transform(input, workerLogic, serverLogic,
       paramPartitioner = paramPartitioner,
       wInPartition = wInPartition,
       workerParallelism,
