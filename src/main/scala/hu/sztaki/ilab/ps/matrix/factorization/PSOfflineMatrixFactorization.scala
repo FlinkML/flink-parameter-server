@@ -87,7 +87,7 @@ object PSOfflineMatrixFactorization {
       iterations)
 
     val workerLogic: WorkerLogic[Either[EOF, Rating], Vector, (UserId, Vector)] =
-      WorkerLogic.addBlockingPullLimiter(workerLogicBase, pullLimit)
+      WorkerLogic.addPullLimiter(workerLogicBase, pullLimit)
 
     val paramInit = (id: Int) => factorInitDesc.open().nextFactor(id)
     val paramUpdate: (Vector, Vector) => Vector = {
