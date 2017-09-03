@@ -9,7 +9,7 @@ import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 import hu.sztaki.ilab.ps.matrix.factorization.workers.PSOnlineMatrixFactorizationAndTopKGeneratorWorker
 import hu.sztaki.ilab.ps.server.SimplePSLogic
 import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction}
-import org.apache.flink.streaming.api.scala.DataStream
+import org.apache.flink.streaming.api.scala._
 import org.apache.flink.util.Collector
 
 
@@ -38,7 +38,7 @@ object PSOnlineMatrixFactorizationAndTopKGenerator {
     * @param negativeSampleRate Number of negative samples (Ratings with rate = 0) for each positive rating
     * @param userMemory         The last #memory item seen by the user will not be recommended
     * @param K                  Number of items in the generated recommendation
-    * @param workerK Number of items in the locally generated recommandations
+    * @param workerK Number of items in the locally generated recommendations
     * @param bucketSize Parameter of the LEMP algorithm
     * @param pruningAlgorithm Pruning strategy based on the LEMP paper
     * @param pullLimit  Upper limit of unanswered pull requests in the system
