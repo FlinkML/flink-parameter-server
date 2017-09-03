@@ -21,6 +21,18 @@ object Utils {
     * Queue used for calculating TopK
     */
   type TopKQueue = mutable.PriorityQueue[(Double, ItemId)]
+
+  /**
+    * Initializes an empty queue for calculating TopK
+    */
+  def newTopKQueue(): TopKQueue = {
+    new mutable.PriorityQueue[(Double, Int)]()(implicitly[Ordering[(Double, Int)]].reverse)
+  }
+
+  /**
+    * Output type of TopK generator workers
+    */
+  type TopKWorkerOutput = (RichRating, TopKQueue)
 }
 
 
