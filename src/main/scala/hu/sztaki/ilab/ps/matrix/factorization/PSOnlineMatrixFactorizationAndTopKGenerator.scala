@@ -95,7 +95,7 @@ object PSOnlineMatrixFactorizationAndTopKGenerator {
     }, x => x.targetWorker)
 
     FlinkParameterServer.transform(
-      partitionedInput, workerLogic, serverLogic,workerParallelism, psParallelism, iterationWaitTime)
+      partitionedInput, workerLogic, serverLogic, workerParallelism, psParallelism, iterationWaitTime)
       .flatMap( new CollectTopKFromEachWorker(K, userMemory, workerParallelism)).setParallelism(1)
   }
 
