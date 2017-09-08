@@ -181,11 +181,13 @@ object WorkerLogic {
         }
 
         override def pull(id: Int): Unit = {
-          if (pullCounter < pullLimit) {
-            pullCounter += 1
-            ps.pull(id)
-          } else {
-            pullQueue.enqueue(id)
+          pullQueue synchronized {
+            if (pullCounter < pullLimit) {
+              pullCounter += 1
+              ps.pull(id)
+            } else {
+              pullQueue.enqueue(id)
+            }
           }
         }
 
@@ -208,9 +210,12 @@ object WorkerLogic {
                               ps: ParameterServerClient[P, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onPullRecv(paramId, paramValue, wrappedPS)
-        pullCounter -= 1
-        if (pullQueue.nonEmpty) {
-          wrappedPS.pull(pullQueue.dequeue())
+        pullQueue synchronized {
+          pullCounter -= 1
+          if (pullQueue.nonEmpty) {
+            val id = pullQueue.dequeue()
+            wrappedPS.pull(id)
+          }
         }
       }
     }
