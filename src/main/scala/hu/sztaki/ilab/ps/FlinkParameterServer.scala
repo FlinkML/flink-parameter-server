@@ -228,6 +228,7 @@ object FlinkParameterServer {
 
 
             override def open(parameters: Configuration): Unit = {
+              logic.open()
               psClient.setPartitionId(getRuntimeContext.getIndexOfThisSubtask)
             }
 
