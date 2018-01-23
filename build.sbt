@@ -4,7 +4,7 @@ version := "0.1.0"
 
 scalaVersion := "2.11.7"
 
-lazy val flinkVersion = "1.2.0"
+lazy val flinkVersion = "1.4.0"
 lazy val breezeVersion = "0.13"
 
 lazy val commonDependencies = Seq(
