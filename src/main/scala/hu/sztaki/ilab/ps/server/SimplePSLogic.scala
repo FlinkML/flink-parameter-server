@@ -5,7 +5,7 @@ import hu.sztaki.ilab.ps.{ParameterServer, ParameterServerLogic}
 import scala.collection.mutable
 
 class SimplePSLogic[P](paramInit: => Int => P, paramUpdate: => (P, P) => P) extends ParameterServerLogic[P, (Int, P)] {
-  val params = new mutable.HashMap[Integer, P]()
+  val params = new mutable.HashMap[Int, P]()
 
   @transient lazy val init: (Int) => P = paramInit
   @transient lazy val update: (P, P) => P = paramUpdate
