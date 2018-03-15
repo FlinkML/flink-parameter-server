@@ -14,10 +14,20 @@ lazy val commonDependencies = Seq(
   "com.typesafe" % "config" % "1.3.1"
 )
 
+lazy val json4s = Seq(
+  "org.json4s" %% "json4s-native" % "3.6.0-M1",
+  "org.json4s" %% "json4s-jackson" % "3.6.0-M1"
+)
+
 lazy val flinkDependencies = Seq(
   "org.apache.flink" %% "flink-scala" % flinkVersion,
   "org.apache.flink" %% "flink-streaming-scala" % flinkVersion,
   "org.apache.flink" %% "flink-streaming-java" % flinkVersion
+)
+
+lazy val hashDependencies = Seq(
+  "com.roundeights" %% "hasher" % "1.2.0",
+  "net.openhft" % "zero-allocation-hashing" % "0.8"
 )
 
 lazy val breezeDependencies = Seq(
@@ -34,7 +44,9 @@ lazy val root = (project in file(".")).
   settings(
     libraryDependencies ++= commonDependencies,
     libraryDependencies ++= flinkDependencies.map(_ % "provided"),
-    libraryDependencies ++= breezeDependencies.map(_ % "compile")
+//    libraryDependencies ++= flinkDependencies.map(_ % "compile"),
+    libraryDependencies ++= breezeDependencies.map(_ % "compile"),
+    libraryDependencies ++= hashDependencies.map(_ % "compile")
   )
 
 lazy val commonSettings = Seq(
