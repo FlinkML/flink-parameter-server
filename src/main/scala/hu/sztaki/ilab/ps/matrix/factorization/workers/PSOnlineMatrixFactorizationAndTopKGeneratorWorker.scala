@@ -1,12 +1,12 @@
 package hu.sztaki.ilab.ps.matrix.factorization.workers
 
-import hu.sztaki.ilab.ps.{ParameterServerClient, WorkerLogic}
-import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 import hu.sztaki.ilab.ps.matrix.factorization.factors.{FactorInitializerDescriptor, FactorUpdater}
 import hu.sztaki.ilab.ps.matrix.factorization.pruning.LEMPPruningFunctions._
 import hu.sztaki.ilab.ps.matrix.factorization.pruning._
-import hu.sztaki.ilab.ps.matrix.factorization.utils.RichRating
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.RichRating
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils._
+import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
+import hu.sztaki.ilab.ps.{ParameterServerClient, WorkerLogic}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -51,9 +51,9 @@ class PSOnlineMatrixFactorizationAndTopKGeneratorWorker(negativeSampleRate: Int,
       workerId = data.targetWorker
     }
     ratingBuffer synchronized {
-      ratingBuffer.getOrElseUpdate(data.user, mutable.Queue[RichRating]()).enqueue(data)
+      ratingBuffer.getOrElseUpdate(data.base.user, mutable.Queue[RichRating]()).enqueue(data)
     }
-    ps.pull(data.user)
+    ps.pull(data.base.user)
   }
 
   override def onPullRecv(paramId: UserId, userAndLen: LengthAndVector,
@@ -125,14 +125,14 @@ class PSOnlineMatrixFactorizationAndTopKGeneratorWorker(negativeSampleRate: Int,
     }
     ps.output((rate, topK))
 
-    if (rate.item.hashCode() % workerParallelism == workerId) {
+    if (rate.base.item.hashCode() % workerParallelism == workerId) {
       val numFactors = userVector.length
 
-      val set = seenSet.getOrElseUpdate(rate.user, new mutable.HashSet)
-      if (!(set contains rate.item)) {
-        set += rate.item
-        val list = seenList.getOrElseUpdate(rate.user, new mutable.Queue)
-        list += rate.item
+      val set = seenSet.getOrElseUpdate(rate.base.user, new mutable.HashSet)
+      if (!(set contains rate.base.item)) {
+        set += rate.base.item
+        val list = seenList.getOrElseUpdate(rate.base.user, new mutable.Queue)
+        list += rate.base.item
         if (list.length > userMemory) {
           set -= list.dequeue()
         }
@@ -155,10 +155,10 @@ class PSOnlineMatrixFactorizationAndTopKGeneratorWorker(negativeSampleRate: Int,
         }
       }
 
-      val (_, itemVector) = model.getOrElse(rate.item, initialize(rate.item))
-      val (userDelta, itemDelta) = factorUpdate.delta(rate.rating, userVector, itemVector)
+      val (_, itemVector) = model.getOrElse(rate.base.item, initialize(rate.base.item))
+      val (userDelta, itemDelta) = factorUpdate.delta(rate.base.rating, userVector, itemVector)
 
-      updateModelNoInit(rate.item, attachLength(vectorSum(itemVector, itemDelta)))
+      updateModelNoInit(rate.base.item, attachLength(vectorSum(itemVector, itemDelta)))
 
       ps.push(paramId, (Double.NaN, vectorSum(uDelta, userDelta)))
     }

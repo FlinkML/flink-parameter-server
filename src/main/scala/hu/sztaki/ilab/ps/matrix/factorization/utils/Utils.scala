@@ -1,6 +1,7 @@
 package hu.sztaki.ilab.ps.matrix.factorization.utils
 
 import hu.sztaki.ilab.ps.entities.{PSToWorker, Pull, Push, WorkerToPS}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.RichRating
 
 import scala.collection.mutable
 

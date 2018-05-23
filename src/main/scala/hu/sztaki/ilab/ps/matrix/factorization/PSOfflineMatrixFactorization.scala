@@ -1,7 +1,8 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
 import hu.sztaki.ilab.ps.matrix.factorization.factors.RangedRandomFactorInitializerDescriptor
-import hu.sztaki.ilab.ps.matrix.factorization.utils.{EOF, Rating}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.Rating
+import hu.sztaki.ilab.ps.matrix.factorization.utils.EOF
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, UserId}
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 import hu.sztaki.ilab.ps.matrix.factorization.workers.PSOfflineMatrixFactorizationWorker
@@ -27,7 +28,7 @@ object PSOfflineMatrixFactorization {
 
 
   /**
-    * @param src A flink data stream containing [[utils.Rating]]s
+    * @param src A flink data stream containing [[utils.InputTypes.Rating]]s
     * @param numFactors Number of latent factors
     * @param learningRate  Learning rate of SGD
     * @param rangeMin Lower bound of the random number generator

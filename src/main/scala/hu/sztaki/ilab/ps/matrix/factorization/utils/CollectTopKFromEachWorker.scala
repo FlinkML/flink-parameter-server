@@ -1,6 +1,7 @@
 package hu.sztaki.ilab.ps.matrix.factorization.utils
 
 
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.RichRating
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, TopKQueue, TopKWorkerOutput, UserId}
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 import org.apache.flink.api.common.functions.RichFlatMapFunction
@@ -31,7 +32,7 @@ class CollectTopKFromEachWorker(K: Int, memory: Int, workerParallelism: Int)
                        out: Collector[(UserId, ItemId, Long, List[(Double, ItemId)])]): Unit = {
 
     value match {
-      case Left((RichRating(userId, itemId, _, workerId, ratingId, timestamp), actualTopK)) =>
+      case Left((RichRating(base, workerId, ratingId), actualTopK)) =>
 
         val allTopK = outputs.getOrElseUpdate(ratingId, new Array[TopKQueue](workerParallelism))
 
@@ -40,17 +41,17 @@ class CollectTopKFromEachWorker(K: Int, memory: Int, workerParallelism: Int)
         if (allTopKReceived(allTopK)) {
           val topKQueue = allTopK.fold(new mutable.ListBuffer[(Double, ItemId)]())((q1, q2) => q1 ++= q2)
           val topKList = topKQueue.toList
-            .filterNot(x => seenSet.getOrElseUpdate(userId, new mutable.HashSet) contains x._2)
+            .filterNot(x => seenSet.getOrElseUpdate(base.user, new mutable.HashSet) contains x._2)
             .sortBy(-_._1)
             .take(K)
 
-          out.collect((userId, itemId, timestamp, topKList))
+          out.collect((base.user, base.item, base.getEventTime, topKList))
           outputs -= ratingId
 
-          seenSet.getOrElseUpdate(userId, new mutable.HashSet) += itemId
-          seenList.getOrElseUpdate(userId, new mutable.Queue) += itemId
-          if ((memory > -1) && (seenList(userId).length > memory)) {
-            seenSet(userId) -= seenList(userId).dequeue()
+          seenSet.getOrElseUpdate(base.user, new mutable.HashSet) += base.item
+          seenList.getOrElseUpdate(base.user, new mutable.Queue) += base.item
+          if ((memory > -1) && (seenList(base.user).length > memory)) {
+            seenSet(base.user) -= seenList(base.user).dequeue()
           }
         }
 

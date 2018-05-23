@@ -1,11 +1,11 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
 import hu.sztaki.ilab.ps.FlinkParameterServer
-import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 import hu.sztaki.ilab.ps.matrix.factorization.pruning.{COORD, LEMPPruningStrategy}
-import hu.sztaki.ilab.ps.matrix.factorization.utils.{CollectTopKFromEachWorker, IDGenerator, Rating, RichRating}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.{Rating, RichRating}
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, TopKWorkerOutput, UserId}
-import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector.LengthAndVector
+import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector.{LengthAndVector, _}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.{CollectTopKFromEachWorker, IDGenerator}
 import hu.sztaki.ilab.ps.matrix.factorization.workers.{BaseMFWorkerLogic, PSTopKGeneratorWorker}
 import hu.sztaki.ilab.ps.server.SimplePSLogic
 import org.apache.flink.api.common.functions.{Partitioner, RichFlatMapFunction}
@@ -29,7 +29,7 @@ object PSTopKGenerator {
   /**
     *
     * @param model A flink DataStream of the model: (UserId, Param) / (ItemId, Param)
-    * @param src A flink data stream containing [[utils.Rating]]s
+    * @param src A flink data stream containing [[utils.InputTypes.Rating]]s
     * @param numFactors Number of latent factors
     * @param rangeMin Lower bound of the random number generator
     * @param rangeMax Upper bound of the random number generator

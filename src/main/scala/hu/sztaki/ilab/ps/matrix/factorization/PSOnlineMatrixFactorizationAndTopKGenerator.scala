@@ -3,7 +3,8 @@ package hu.sztaki.ilab.ps.matrix.factorization
 import hu.sztaki.ilab.ps.{FlinkParameterServer, WorkerLogic}
 import hu.sztaki.ilab.ps.matrix.factorization.factors.{RangedRandomFactorInitializerDescriptor, SGDUpdater}
 import hu.sztaki.ilab.ps.matrix.factorization.pruning.{LEMPPruningStrategy, LI}
-import hu.sztaki.ilab.ps.matrix.factorization.utils.{CollectTopKFromEachWorker, IDGenerator, Rating, RichRating}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.{Rating, RichRating}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.{CollectTopKFromEachWorker, IDGenerator}
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, UserId}
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 import hu.sztaki.ilab.ps.matrix.factorization.workers.PSOnlineMatrixFactorizationAndTopKGeneratorWorker
@@ -30,7 +31,7 @@ object PSOnlineMatrixFactorizationAndTopKGenerator {
 
   /**
     *
-    * @param src                A flink data stream containing [[hu.sztaki.ilab.ps.matrix.factorization.utils.Rating]]s
+    * @param src                A flink data stream containing [[hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.Rating]]s
     * @param numFactors         Number of latent factors
     * @param rangeMin           Lower bound of the random number generator
     * @param rangeMax           Upper bound of the random number generator

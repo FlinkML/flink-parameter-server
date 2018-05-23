@@ -1,13 +1,14 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
-import hu.sztaki.ilab.ps.matrix.factorization.utils.Rating
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.Rating
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, UserId}
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 import hu.sztaki.ilab.ps.test.utils.FlinkTestUtils._
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction
 import org.apache.flink.streaming.api.scala._
 import org.scalatest._
-import prop._
+import org.scalatest.prop._
 
 import scala.collection.mutable
 import scala.util.Random
@@ -21,7 +22,7 @@ object PSOfflineMatrixFactorizationTest {
   val random = new Random(47L)
 
   val ratings: Seq[Rating] = Seq.fill(numberOfRatings)(
-    Rating.fromTuple(random.nextInt(numUsers), random.nextInt(numItems), random.nextDouble())
+    InputTypes.ratingFromTuple(random.nextInt(numUsers), random.nextInt(numItems), random.nextDouble())
   )
     // eliminating duplicates
     .groupBy(x => (x.user, x.item)).mapValues(_.head).toSeq.map(_._2)

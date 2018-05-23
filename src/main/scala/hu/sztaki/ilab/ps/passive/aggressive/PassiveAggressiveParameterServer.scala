@@ -283,8 +283,10 @@ object PassiveAggressiveParameterServer {
     val workerLogic = WorkerLogic.addPullLimiter( // adding pull limiter to avoid iteration deadlock
       new WorkerLogic[Vec, Param, (VecId, Label)] {
 
-        val paramWaitingQueue = new mutable.HashMap[Int,
-          mutable.Queue[(Vec, ArrayBuffer[(Int, Param)])]]()
+        val paramWaitingQueue = new mutable.HashMap[
+          Int,
+          mutable.Queue[(Vec, ArrayBuffer[(Int, Param)])]
+          ]()
 
         override def onRecv(data: Vec,
                             ps: ParameterServerClient[Param, (VecId, Label)]): Unit = {

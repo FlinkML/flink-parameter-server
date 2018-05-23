@@ -1,6 +1,7 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
-import hu.sztaki.ilab.ps.matrix.factorization.utils.Rating
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.Rating
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, UserId}
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 import org.apache.flink.api.common.functions.RichFlatMapFunction
@@ -41,7 +42,7 @@ object PSOnlineMatrixFactorizationImplicitTest{
 
       override def flatMap(value: String, out: Collector[Rating]): Unit = {
         val fieldsArray = value.split(" ")
-        val r = Rating.fromTuple(fieldsArray(1).toInt, fieldsArray(2).toInt, 1.0)
+        val r = InputTypes.ratingFromTuple(fieldsArray(1).toInt, fieldsArray(2).toInt, 1.0)
         out.collect(r)
       }
     })

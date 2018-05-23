@@ -1,10 +1,10 @@
 package hu.sztaki.ilab.ps.matrix.factorization.workers
 
 import hu.sztaki.ilab.ps.matrix.factorization.factors.{RangedRandomFactorInitializerDescriptor, SGDUpdater}
-import hu.sztaki.ilab.ps.{ParameterServerClient, WorkerLogic}
-import hu.sztaki.ilab.ps.matrix.factorization.utils.Rating
-import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.Rating
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, UserId}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
+import hu.sztaki.ilab.ps.{ParameterServerClient, WorkerLogic}
 
 import scala.collection.mutable
 import scala.util.Random

@@ -1,11 +1,11 @@
 package hu.sztaki.ilab.ps.matrix.factorization.workers
 
 import hu.sztaki.ilab.ps.ParameterServerClient
-import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 import hu.sztaki.ilab.ps.matrix.factorization.pruning.LEMPPruningFunctions._
 import hu.sztaki.ilab.ps.matrix.factorization.pruning._
-import hu.sztaki.ilab.ps.matrix.factorization.utils.RichRating
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.RichRating
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils._
+import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -26,9 +26,9 @@ class PSTopKGeneratorWorker(workerK: Int,
   override def onRecv(data: RichRating, ps: ParameterServerClient[LengthAndVector, TopKWorkerOutput]): Unit = {
     if (workerId == -1) workerId = data.targetWorker
     ratingBuffer synchronized {
-      ratingBuffer.getOrElseUpdate(data.user, mutable.Queue[RichRating]()).enqueue(data)
+      ratingBuffer.getOrElseUpdate(data.base.user, mutable.Queue[RichRating]()).enqueue(data)
     }
-    ps.pull(data.user)
+    ps.pull(data.base.user)
   }
 
 

@@ -1,7 +1,7 @@
 package hu.sztaki.ilab.ps.matrix.factorization
 
 import hu.sztaki.ilab.ps.matrix.factorization.sink.nDCGSink
-import hu.sztaki.ilab.ps.matrix.factorization.utils.Rating
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.Rating
 import org.apache.flink.streaming.api.scala._
 
 class PSOnlineMatrixFactorizationAndTopKGeneratorTest {

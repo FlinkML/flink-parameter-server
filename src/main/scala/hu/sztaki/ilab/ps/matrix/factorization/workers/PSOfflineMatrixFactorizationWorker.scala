@@ -2,7 +2,8 @@ package hu.sztaki.ilab.ps.matrix.factorization.workers
 
 import hu.sztaki.ilab.ps.matrix.factorization.PSOfflineMatrixFactorization
 import hu.sztaki.ilab.ps.matrix.factorization.factors.{FactorInitializer, RangedRandomFactorInitializerDescriptor, SGDUpdater}
-import hu.sztaki.ilab.ps.matrix.factorization.utils.{EOF, Rating}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.{EOF, InputTypes}
+import hu.sztaki.ilab.ps.matrix.factorization.utils.InputTypes.Rating
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Utils.{ItemId, UserId}
 import hu.sztaki.ilab.ps.matrix.factorization.utils.Vector.{Vector, vectorSum}
 import hu.sztaki.ilab.ps.{ParameterServerClient, WorkerLogic}
@@ -88,7 +89,7 @@ class PSOfflineMatrixFactorizationWorker(numFactors: Int,
             randomItemId = allItemIdsArray(Random.nextInt(allItemIdsArray.length))
           }
 
-          rs += Rating.fromTuple(rating.user, randomItemId, 0.0)
+          rs += InputTypes.ratingFromTuple(rating.user, randomItemId, 0.0)
         }
 
         rs += rating
