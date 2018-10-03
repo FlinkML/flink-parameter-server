@@ -8,13 +8,13 @@ import scala.collection.mutable
 /**
   * Created by lukacsg on 2017.11.29..
   */
-class SendHashPSLogic(numHashes: Int) extends ParameterServerLogic[(Long, Vector), (Int, Array[Long])] {
+class SendHashPSLogic(numHashes: Int) extends ParameterServerLogic[Int, (Long, Vector), (Int, Array[Long])] {
 
   val model = mutable.HashMap.empty[Int, Array[(Long, Int)]]
 
-  override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[(Long, Vector), (Int, Array[Long])]): Unit = ???
+  override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[Int, (Long, Vector), (Int, Array[Long])]): Unit = ???
 
-  override def onPushRecv(id: Int, deltaUpdate: (Long, Vector), ps: ParameterServer[(Long, Vector), (Int, Array[Long])]): Unit = {
+  override def onPushRecv(id: Int, deltaUpdate: (Long, Vector), ps: ParameterServer[Int, (Long, Vector), (Int, Array[Long])]): Unit = {
     val (tweetId, hashValues) = deltaUpdate
     var changed = false
     val update = model.get(id) match {
@@ -39,6 +39,6 @@ class SendHashPSLogic(numHashes: Int) extends ParameterServerLogic[(Long, Vector
     if(changed) model += ((id, update))
   }
 
-  override def close(ps: ParameterServer[(Long, Vector), (Int, Array[Long])]): Unit =
+  override def close(ps: ParameterServer[Int, (Long, Vector), (Int, Array[Long])]): Unit =
     model.foreach{case(id, c) => ps.output(id, c.map(_._1))}
 }

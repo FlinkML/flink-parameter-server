@@ -87,10 +87,10 @@ object PSOfflineMatrixFactorization {
       userMemory,
       iterations)
 
-    val workerLogic: WorkerLogic[Either[EOF, Rating], Vector, (UserId, Vector)] =
+    val workerLogic: WorkerLogic[Either[EOF, Rating], ItemId, Vector, (UserId, Vector)] =
       WorkerLogic.addPullLimiter(workerLogicBase, pullLimit)
 
-    val paramInit = (id: Int) => factorInitDesc.open().nextFactor(id)
+    val paramInit = (id: ItemId) => factorInitDesc.open().nextFactor(id)
     val paramUpdate: (Vector, Vector) => Vector = {
       case (vec, deltaVec) => vectorSum(vec, deltaVec)
     }

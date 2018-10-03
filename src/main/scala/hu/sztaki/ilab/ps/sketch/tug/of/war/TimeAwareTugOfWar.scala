@@ -20,10 +20,10 @@ object TimeAwareTugOfWar {
                psParallelism: Int,
                iterationWaitTime: Long) : DataStream[((Int, Int), Vector)] = {
 
-    val workerLogic = new WorkerLogic[(String, Array[String], Int), (Int, Array[Long]), Any] {
+    val workerLogic = new WorkerLogic[(String, Array[String], Int), Int, (Int, Array[Long]), Any] {
 
 
-      override def onRecv(data: (String, Array[String], Int), ps: ParameterServerClient[(Int, Array[Long]), Any]): Unit = {
+      override def onRecv(data: (String, Array[String], Int), ps: ParameterServerClient[Int, (Int, Array[Long]), Any]): Unit = {
         val id = data._1.toLong
         val tweet = data._2
 
@@ -35,7 +35,7 @@ object TimeAwareTugOfWar {
         }
       }
 
-      override def onPullRecv(paramId: Int, paramValue: (Int, Array[Long]), ps: ParameterServerClient[(Int, Array[Long]), Any]): Unit = ???
+      override def onPullRecv(paramId: Int, paramValue: (Int, Array[Long]), ps: ParameterServerClient[Int, (Int, Array[Long]), Any]): Unit = ???
     }
 
     val serverLogic = new TimeAwareToWPSLogic(numHashes)

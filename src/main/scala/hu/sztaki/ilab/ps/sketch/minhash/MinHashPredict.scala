@@ -76,15 +76,15 @@ object MinHashPredict {
                      iterationWaitTime: Long): DataStream[(Int, Array[(Int, Long)])] = {
 
     val searchWords = words.forward.map(_.hashCode)
-    val workerLogic = new WorkerLogic[Int,  Either[(Int, Array[Long]), Array[Long]], Any] {
+    val workerLogic = new WorkerLogic[Int, Int, Either[(Int, Array[Long]), Array[Long]], Any] {
 
-      override def onRecv(wordHash: Int, ps: ParameterServerClient[Either[(Int, Array[Long]), Array[Long]], Any]):
+      override def onRecv(wordHash: Int, ps: ParameterServerClient[Int, Either[(Int, Array[Long]), Array[Long]], Any]):
       Unit =
         ps.pull(wordHash)
 
       override def onPullRecv(paramId: Int,
                               paramValue:  Either[(Int, Array[Long]), Array[Long]],
-                              ps: ParameterServerClient[ Either[(Int, Array[Long]), Array[Long]], Any]):
+                              ps: ParameterServerClient[Int, Either[(Int, Array[Long]), Array[Long]], Any]):
       Unit =
         paramValue match {
           case Right(targetVector) =>
@@ -98,7 +98,7 @@ object MinHashPredict {
     val serverLogic = new MinHashPredictPSLogic(numHashes, K)
 
 
-    val workerToPSPartitioner: WorkerToPS[ Either[(Int, Array[Long]), Array[Long]]] => Int = {
+    val workerToPSPartitioner: WorkerToPS[Int, Either[(Int, Array[Long]), Array[Long]]] => Int = {
       case WorkerToPS(_, msg) =>
         msg match {
           case Left(Pull(pId)) => hashFunc(pId) % psParallelism
@@ -106,7 +106,7 @@ object MinHashPredict {
         }
     }
 
-    val psToWorkerPartitioner: PSToWorker[ Either[(Int, Array[Long]), Array[Long]]] => Int = {
+    val psToWorkerPartitioner: PSToWorker[Int, Either[(Int, Array[Long]), Array[Long]]] => Int = {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 

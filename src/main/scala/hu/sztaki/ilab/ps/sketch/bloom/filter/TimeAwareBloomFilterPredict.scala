@@ -27,7 +27,7 @@ object TimeAwareBloomFilterPredict{
               pullLimit: Int,
               iterationWaitTime: Long):  DataStream[((Int, Int), Array[(Double, Int)])]  = {
 
-    val workerLogic = new WorkerLogic[(Int, String), Either[((Int, Int), Array[Int]),  (Int, Array[Int])], Any] {
+    val workerLogic = new WorkerLogic[(Int, String), Int, Either[((Int, Int), Array[Int]),  (Int, Array[Int])], Any] {
 
       val queryBuffer = new mutable.HashMap[Int, Int]()
 
@@ -40,7 +40,7 @@ object TimeAwareBloomFilterPredict{
       * Interface to ParameterServer.
       */
     override def onRecv(data: (Int, String),
-                        ps: ParameterServerClient[Either[((Int, Int), Array[Int]),  (Int, Array[Int])], Any]): Unit = {
+                        ps: ParameterServerClient[Int, Either[((Int, Int), Array[Int]),  (Int, Array[Int])], Any]): Unit = {
       queryBuffer.update(data._2.hashCode, data._1)
       ps.pull(data._2.hashCode)
     }
@@ -58,7 +58,7 @@ object TimeAwareBloomFilterPredict{
         */
       override def onPullRecv(paramId: Int,
                               paramValue: Either[((Int, Int), Array[Int]),  (Int, Array[Int])],
-                              ps: ParameterServerClient[Either[((Int, Int), Array[Int]),  (Int, Array[Int])], Any]): Unit = {
+                              ps: ParameterServerClient[Int, Either[((Int, Int), Array[Int]),  (Int, Array[Int])], Any]): Unit = {
 
         paramValue match {
           case Left(((_, timeSlot), targetVector)) =>
@@ -74,7 +74,7 @@ object TimeAwareBloomFilterPredict{
 
     val hashFunc: Any => Int = x => Math.abs(x.hashCode())
 
-    val workerToPSPartitioner: WorkerToPS[ Either[((Int, Int), Array[Int]),  (Int, Array[Int])]] => Int = {
+    val workerToPSPartitioner: WorkerToPS[Int, Either[((Int, Int), Array[Int]),  (Int, Array[Int])]] => Int = {
       case WorkerToPS(_, msg) =>
         msg match {
           case Left(Pull(pId)) => hashFunc(pId) % psParallelism
@@ -82,7 +82,7 @@ object TimeAwareBloomFilterPredict{
         }
     }
 
-    val psToWorkerPartitioner: PSToWorker[ Either[((Int, Int), Array[Int]),  (Int, Array[Int])]] => Int = {
+    val psToWorkerPartitioner: PSToWorker[Int, Either[((Int, Int), Array[Int]),  (Int, Array[Int])]] => Int = {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 

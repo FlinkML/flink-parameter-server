@@ -20,7 +20,7 @@ object TugOfWar {
                psParallelism: Int,
                iterationWaitTime: Long) : DataStream[(Int, Vector)] = {
 
-    val workerLogic = new WorkerLogic[(String, Array[String]), Array[Long], Array[String]] {
+    val workerLogic = new WorkerLogic[(String, Array[String]), Int, Array[Long], Array[String]] {
 
       /**
       * Method called when new data arrives.
@@ -30,7 +30,7 @@ object TugOfWar {
       * @param ps
       * Interface to ParameterServer.
       */
-    override def onRecv(data: (String, Array[String]), ps: ParameterServerClient[Array[Long], Array[String]]): Unit = {
+    override def onRecv(data: (String, Array[String]), ps: ParameterServerClient[Int, Array[Long], Array[String]]): Unit = {
 
       val id = data._1.toLong
       val tweet = data._2
@@ -56,7 +56,7 @@ object TugOfWar {
         */
       override def onPullRecv(paramId: Int,
                               paramValue: Array[Long],
-                              ps: ParameterServerClient[Array[Long], Array[String]]): Unit = ???
+                              ps: ParameterServerClient[Int, Array[Long], Array[String]]): Unit = ???
     }
 
     val serverLogic = new BitSetBasedPSLogic(numHashes)

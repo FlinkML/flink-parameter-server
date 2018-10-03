@@ -53,9 +53,9 @@ object PSOnlineMatrixFactorization{
 
     val workerLogicBase = new PSOnlineMatrixFactorizationWorker(numFactors, rangeMin, rangeMax, learningRate, negativeSampleRate, userMemory)
 
-    val workerLogic: WorkerLogic[Rating, Vector, (UserId, Vector)] = WorkerLogic.addPullLimiter(workerLogicBase, pullLimit)
+    val workerLogic: WorkerLogic[Rating, ItemId, Vector, (UserId, Vector)] = WorkerLogic.addPullLimiter(workerLogicBase, pullLimit)
 
-    val serverLogic = new SimplePSLogic[Array[Double]](
+    val serverLogic = new SimplePSLogic[ItemId, Array[Double]](
       x => factorInitDesc.open().nextFactor(x), { (vec, deltaVec) => vectorSum(vec, deltaVec)}
     )
 

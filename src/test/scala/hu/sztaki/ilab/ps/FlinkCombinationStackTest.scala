@@ -21,6 +21,7 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
   "flink combined count and timer worker and PS communication" should "work" in {
 
     // @todo ClientSender is of an array type, since we buffer the data before sending!
+    type Id = Int
     type P = Array[Double]
     type T = (Int, P)
     type WOut = Unit
@@ -54,24 +55,24 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
     val countLimit = 4
     val timeLimit = 1 seconds
 
-    val clientCombinables: List[Combinable[WorkerToPS[P]]] =
+    val clientCombinables: List[Combinable[WorkerToPS[Id, P]]] =
       List(CountClientSender(countLimit), TimerClientSender(timeLimit))
 
-    val serverCombinables: List[Combinable[PSToWorker[P]]] =
+    val serverCombinables: List[Combinable[PSToWorker[Id, P]]] =
       List(CountPSSender(countLimit), TimerPSSender(timeLimit))
 
     // The counter AND the timer condition should be met at the same time before the client sends
-    def clientCondition(combinables: List[Combinable[WorkerToPS[P]]]): Boolean = {
+    def clientCondition(combinables: List[Combinable[WorkerToPS[Id, P]]]): Boolean = {
       combinables.map(_.shouldSend).reduce(_ && _)
     }
 
     // The counter OR the timer condition should be met before the server sends
-    def serverCondition(combinables: List[Combinable[PSToWorker[P]]]): Boolean = {
+    def serverCondition(combinables: List[Combinable[PSToWorker[Id, P]]]): Boolean = {
       combinables.map(_.shouldSend).reduce(_ || _)
     }
 
-    val combinoClientSender = new CombinationWorkerSender[P](clientCondition, clientCombinables)
-    val combinoPSSender = new CombinationPSSender[P](serverCondition, serverCombinables)
+    val combinoClientSender = new CombinationWorkerSender[Id, P](clientCondition, clientCombinables)
+    val combinoPSSender = new CombinationPSSender[Id, P](serverCondition, serverCombinables)
 
     def initPS(id: Int): P = {
       Array.fill(arrayLength)(0.0)
@@ -89,16 +90,16 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
         // @todo add real source
         src,
         // @todo add real worker logic
-        new WorkerLogic[T, P, WOut] {
+        new WorkerLogic[T, Id, P, WOut] {
           val waitingToAnswer = new mutable.HashMap[Int, mutable.Queue[Array[Double]]]()
 
-          override def onRecv(data: T, ps: ParameterServerClient[P, WOut]): Unit = {
+          override def onRecv(data: T, ps: ParameterServerClient[Id, P, WOut]): Unit = {
             ps.pull(data._1)
             val waitingQueue = waitingToAnswer.getOrElseUpdate(data._1, new mutable.Queue[Array[Double]]())
             waitingQueue += data._2
           }
 
-          override def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[P, WOut]): Unit = {
+          override def onPullRecv(paramId: Id, paramValue: P, ps: ParameterServerClient[Id, P, WOut]): Unit = {
             println(s"Received stuff: ${paramId}, ${paramValue.mkString(",")}")
             val delta = waitingToAnswer.get(paramId) match {
               case Some(q) => q.dequeue()
@@ -108,12 +109,12 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
             ps.push(paramId, delta)
           }
         },
-        new SimplePSLogic[P](initPS, updatePS),
+        new SimplePSLogic[Id, P](initPS, updatePS),
         // @todo proper partitioning, this is just a placeholder
-        (data: Array[WorkerToPS[P]]) => {
+        (data: Array[WorkerToPS[Id, P]]) => {
           data.head.workerPartitionIndex
         },
-        (data: Array[PSToWorker[P]]) => {
+        (data: Array[PSToWorker[Id, P]]) => {
           data.length match {
             case 0 => 0
             case _ => data.head.workerPartitionIndex % numberOfPartitions
@@ -121,9 +122,9 @@ class FlinkCombinationStackTest extends FlatSpec with PropertyChecks with Matche
         },
         4,
         4,
-        new MultipleWorkerReceiver[P],
+        new MultipleWorkerReceiver[Id, P],
         combinoClientSender,
-        new MultiplePSReceiver[P],
+        new MultiplePSReceiver[Id, P],
         combinoPSSender,
         5000
       )

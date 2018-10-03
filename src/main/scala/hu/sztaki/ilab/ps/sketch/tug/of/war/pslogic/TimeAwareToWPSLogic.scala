@@ -5,14 +5,14 @@ import hu.sztaki.ilab.ps.sketch.utils.Utils.Vector
 
 import scala.collection.mutable
 
-class TimeAwareToWPSLogic(numHashes: Int) extends ParameterServerLogic[(Int, Array[Long]), ((Int, Int), Vector)]{
+class TimeAwareToWPSLogic(numHashes: Int) extends ParameterServerLogic[Int, (Int, Array[Long]), ((Int, Int), Vector)]{
 
   val model = new mutable.HashMap[(Int, Int), Vector]()
 
-  override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[(Int, Array[Long]), ((Int, Int), Vector)]): Unit = ???
+  override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[Int, (Int, Array[Long]), ((Int, Int), Vector)]): Unit = ???
 
 
-  override def onPushRecv(id: Int, deltaUpdate: (Int, Array[Long]), ps: ParameterServer[(Int, Array[Long]), ((Int, Int), Vector)]): Unit = {
+  override def onPushRecv(id: Int, deltaUpdate: (Int, Array[Long]), ps: ParameterServer[Int, (Int, Array[Long]), ((Int, Int), Vector)]): Unit = {
     val param = model.getOrElseUpdate((id, deltaUpdate._1), new Vector(numHashes))
     val update = collection.mutable.BitSet.fromBitMask(deltaUpdate._2)
     for(i <- 0 until numHashes){
@@ -25,7 +25,7 @@ class TimeAwareToWPSLogic(numHashes: Int) extends ParameterServerLogic[(Int, Arr
     }
   }
 
-  override def close(ps: ParameterServer[(Int, Array[Long]), ((Int, Int), Vector)]): Unit = {
+  override def close(ps: ParameterServer[Int, (Int, Array[Long]), ((Int, Int), Vector)]): Unit = {
     model.foreach{case(id, c) => ps.output(id, c)}
   }
 }

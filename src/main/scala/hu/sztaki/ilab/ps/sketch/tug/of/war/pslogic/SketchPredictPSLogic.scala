@@ -6,19 +6,19 @@ import hu.sztaki.ilab.ps.{ParameterServer, ParameterServerLogic}
 import scala.collection.mutable
 
 class SketchPredictPSLogic(numHashes: Int, numMeans: Int, K: Int)
-  extends ParameterServerLogic[Either[(Int, Vector), Vector], (Int, Array[(Double, Int)])]{
+  extends ParameterServerLogic[Int, Either[(Int, Vector), Vector], (Int, Array[(Double, Int)])]{
 
   val model = new mutable.HashMap[Int,Vector]()
 
   override def onPullRecv(id: Int,
                           workerPartitionIndex: Int,
-                          ps: ParameterServer[Either[(Int, Vector), Vector], (Int, Array[(Double, Int)])]): Unit = {
+                          ps: ParameterServer[Int, Either[(Int, Vector), Vector], (Int, Array[(Double, Int)])]): Unit = {
     ps.answerPull(id, Left((0, model.getOrElseUpdate(id, new Vector(numHashes)))), workerPartitionIndex)
   }
 
   override def onPushRecv(id: Int,
                           deltaUpdate: Either[(Int, Vector), Vector],
-                          ps: ParameterServer[Either[(Int, Vector), Vector], (Int, Array[(Double, Int)])]): Unit = {
+                          ps: ParameterServer[Int, Either[(Int, Vector), Vector], (Int, Array[(Double, Int)])]): Unit = {
     deltaUpdate match {
       case Left((queryId, targetVector)) =>
         val topK = new mutable.ArrayBuffer[(Double, Int)]

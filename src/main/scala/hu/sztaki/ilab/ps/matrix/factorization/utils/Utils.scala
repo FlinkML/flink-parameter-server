@@ -52,7 +52,7 @@ object IDGenerator {
 class Partitioner[P](psParallelism: Int) extends Serializable{
   lazy val hashFunc: Any => Int = x => Math.abs(x.hashCode())
 
-  lazy val workerToPSPartitioner: WorkerToPS[P] => Int = {
+  lazy val workerToPSPartitioner: WorkerToPS[Int, P] => Int = {
     case WorkerToPS(_, msg) =>
       msg match {
         case Left(Pull(pId)) => hashFunc(pId) % psParallelism
@@ -60,7 +60,7 @@ class Partitioner[P](psParallelism: Int) extends Serializable{
       }
   }
 
-  lazy val psToWorkerPartitioner: PSToWorker[P] => Int = {
+  lazy val psToWorkerPartitioner: PSToWorker[Int, P] => Int = {
     case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
   }
 }

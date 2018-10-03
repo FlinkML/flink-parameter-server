@@ -68,10 +68,10 @@ object PSTopKGenerator {
       pruning = pruningAlgorithm
     )
 
-    val workerLogic: BaseMFWorkerLogic[RichRating, LengthAndVector, TopKWorkerOutput] =
+    val workerLogic: BaseMFWorkerLogic[RichRating, UserId, LengthAndVector, TopKWorkerOutput] =
       BaseMFWorkerLogic.addPullLimiter(baseWorkerLogic, pullLimit)
 
-    val psLogic = new SimplePSLogic[LengthAndVector](
+    val psLogic = new SimplePSLogic[UserId, LengthAndVector](
       _ => invalidParam, (_, x) => x
     )
 

@@ -6,12 +6,12 @@ import hu.sztaki.ilab.ps.{ParameterServer, ParameterServerLogic}
 import scala.collection.mutable
 
 class TimeAwareToWPredictPSLogic(numHashes: Int, numMeans: Int, K: Int)
-  extends ParameterServerLogic[Either[((Int, Int), Vector),  (Int, Vector)], ((Int, Int), Array[(Double, Int)])]{
+  extends ParameterServerLogic[Int, Either[((Int, Int), Vector),  (Int, Vector)], ((Int, Int), Array[(Double, Int)])]{
 
   val model = new mutable.HashMap[(Int, Int), Vector]()
 
   override def onPullRecv(id: Int, workerPartitionIndex: Int,
-                          ps: ParameterServer[Either[((Int, Int), Vector), (Int, Vector)], ((Int, Int), Array[(Double, Int)])]): Unit = {
+                          ps: ParameterServer[Int, Either[((Int, Int), Vector), (Int, Vector)], ((Int, Int), Array[(Double, Int)])]): Unit = {
     model
       .filter(_._1._1 == id)
       .foreach(p => {
@@ -21,7 +21,7 @@ class TimeAwareToWPredictPSLogic(numHashes: Int, numMeans: Int, K: Int)
 
 
   override def onPushRecv(id: Int, deltaUpdate: Either[((Int, Int), Vector), (Int, Vector)],
-                          ps: ParameterServer[Either[((Int, Int), Vector), (Int, Vector)], ((Int, Int), Array[(Double, Int)])]): Unit = {
+                          ps: ParameterServer[Int, Either[((Int, Int), Vector), (Int, Vector)], ((Int, Int), Array[(Double, Int)])]): Unit = {
     deltaUpdate match {
       case Left(((queryId, timeSlot), targetVector)) =>
         val topK = new mutable.ArrayBuffer[(Double, Int)]

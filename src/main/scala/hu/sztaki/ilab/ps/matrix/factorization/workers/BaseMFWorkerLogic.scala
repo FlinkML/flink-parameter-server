@@ -5,11 +5,11 @@ import hu.sztaki.ilab.ps.{ParameterServerClient, WorkerLogic}
 import scala.collection.mutable
 
 
-trait BaseMFWorkerLogic[T, P, WOut] extends WorkerLogic[T, P, WOut]{
+trait BaseMFWorkerLogic[T, Id, P, WOut] extends WorkerLogic[T, Id, P, WOut]{
 
-  val model = new mutable.HashMap[Int, P]
+  val model = new mutable.HashMap[Id, P]
 
-  def updateModel(id: Int, param: P)
+  def updateModel(id: Id, param: P)
 
 }
 
@@ -36,9 +36,9 @@ object BaseMFWorkerLogic {
     * @return
     * [[WorkerLogic]] that limits pulls.
     */
-  def addBlockingPullLimiter[T, P, WOut, WLogic <: BaseMFWorkerLogic[T, P, WOut]](workerLogic: WLogic,
-                                                                                  pullLimit: Int): BaseMFWorkerLogic[T, P, WOut] = {
-    new BaseMFWorkerLogic[T, P, WOut] {
+  def addBlockingPullLimiter[T, Id, P, WOut, WLogic <: BaseMFWorkerLogic[T, Id, P, WOut]](workerLogic: WLogic,
+                                                                                  pullLimit: Int): BaseMFWorkerLogic[T, Id, P, WOut] = {
+    new BaseMFWorkerLogic[T, Id, P, WOut] {
 
 
       private var pullCounter = 0
@@ -46,11 +46,11 @@ object BaseMFWorkerLogic {
       val psLock = new ReentrantLock()
       val canPull: Condition = psLock.newCondition()
 
-      val wrappedPS = new ParameterServerClient[P, WOut] {
+      val wrappedPS = new ParameterServerClient[Id, P, WOut] {
 
-        private var ps: ParameterServerClient[P, WOut] = _
+        private var ps: ParameterServerClient[Id, P, WOut] = _
 
-        def setPS(ps: ParameterServerClient[P, WOut]): Unit = {
+        def setPS(ps: ParameterServerClient[Id, P, WOut]): Unit = {
           psLock.lock()
           try {
             this.ps = ps
@@ -59,7 +59,7 @@ object BaseMFWorkerLogic {
           }
         }
 
-        override def pull(id: Int): Unit = {
+        override def pull(id: Id): Unit = {
           psLock.lock()
           try {
             while (pullCounter >= pullLimit) {
@@ -73,7 +73,7 @@ object BaseMFWorkerLogic {
           }
         }
 
-        override def push(id: Int, deltaUpdate: P): Unit = {
+        override def push(id: Id, deltaUpdate: P): Unit = {
           psLock.lock()
           try {
             ps.push(id, deltaUpdate)
@@ -92,14 +92,14 @@ object BaseMFWorkerLogic {
         }
       }
 
-      override def onRecv(data: T, ps: ParameterServerClient[P, WOut]): Unit = {
+      override def onRecv(data: T, ps: ParameterServerClient[Id, P, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onRecv(data, wrappedPS)
       }
 
-      override def onPullRecv(paramId: Int,
+      override def onPullRecv(paramId: Id,
                               paramValue: P,
-                              ps: ParameterServerClient[P, WOut]): Unit = {
+                              ps: ParameterServerClient[Id, P, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onPullRecv(paramId, paramValue, wrappedPS)
         psLock.lock()
@@ -111,7 +111,7 @@ object BaseMFWorkerLogic {
         }
       }
 
-      override def updateModel(id: Int, param: P): Unit = workerLogic.updateModel(id, param)
+      override def updateModel(id: Id, param: P): Unit = workerLogic.updateModel(id, param)
     }
   }
 
@@ -133,24 +133,24 @@ object BaseMFWorkerLogic {
     * @return
     * [[WorkerLogic]] that limits pulls.
     */
-  def addPullLimiter[T, P, WOut](workerLogic: BaseMFWorkerLogic[T, P, WOut],
-                                 pullLimit: Int): BaseMFWorkerLogic[T, P, WOut] = {
-    new BaseMFWorkerLogic[T, P, WOut] {
+  def addPullLimiter[T, Id, P, WOut](workerLogic: BaseMFWorkerLogic[T, Id, P, WOut],
+                                 pullLimit: Int): BaseMFWorkerLogic[T, Id, P, WOut] = {
+    new BaseMFWorkerLogic[T, Id, P, WOut] {
 
-      override def updateModel(id: Int, param: P): Unit = workerLogic.updateModel(id, param)
+      override def updateModel(id: Id, param: P): Unit = workerLogic.updateModel(id, param)
 
       private var pullCounter = 0
-      private val pullQueue = mutable.Queue[Int]()
+      private val pullQueue = mutable.Queue[Id]()
 
-      val wrappedPS = new ParameterServerClient[P, WOut] {
+      val wrappedPS = new ParameterServerClient[Id, P, WOut] {
 
-        private var ps: ParameterServerClient[P, WOut] = _
+        private var ps: ParameterServerClient[Id, P, WOut] = _
 
-        def setPS(ps: ParameterServerClient[P, WOut]): Unit = {
+        def setPS(ps: ParameterServerClient[Id, P, WOut]): Unit = {
           this.ps = ps
         }
 
-        override def pull(id: Int): Unit = {
+        override def pull(id: Id): Unit = {
           if (pullCounter < pullLimit) {
             pullCounter += 1
             ps.pull(id)
@@ -159,7 +159,7 @@ object BaseMFWorkerLogic {
           }
         }
 
-        override def push(id: Int, deltaUpdate: P): Unit = {
+        override def push(id: Id, deltaUpdate: P): Unit = {
           ps.push(id, deltaUpdate)
         }
 
@@ -168,14 +168,14 @@ object BaseMFWorkerLogic {
         }
       }
 
-      override def onRecv(data: T, ps: ParameterServerClient[P, WOut]): Unit = {
+      override def onRecv(data: T, ps: ParameterServerClient[Id, P, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onRecv(data, wrappedPS)
       }
 
-      override def onPullRecv(paramId: Int,
+      override def onPullRecv(paramId: Id,
                               paramValue: P,
-                              ps: ParameterServerClient[P, WOut]): Unit = {
+                              ps: ParameterServerClient[Id, P, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onPullRecv(paramId, paramValue, wrappedPS)
         pullCounter -= 1

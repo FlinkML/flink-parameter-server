@@ -5,20 +5,20 @@ import hu.sztaki.ilab.ps.{LooseParameterServerLogic, ParameterServer, ParameterS
 import scala.collection.mutable
 
 class MinHashPredictPSLogic(numHashes: Int, K: Int)
-  extends ParameterServerLogic[Either[(Int, Array[Long]), Array[Long]], (Int, Array[(Double, Int)])]{
+  extends ParameterServerLogic[Int, Either[(Int, Array[Long]), Array[Long]], (Int, Array[(Double, Int)])]{
 
 
   val model = new mutable.HashMap[Int, Array[Long]]()
 
   override def onPullRecv(id: Int,
                           workerPartitionIndex: Int,
-                          ps: ParameterServer[Either[(Int, Array[Long]), Array[Long]], (Int, Array[(Double, Int)])]): Unit =
+                          ps: ParameterServer[Int, Either[(Int, Array[Long]), Array[Long]], (Int, Array[(Double, Int)])]): Unit =
     ps.answerPull(id, Right(model.getOrElseUpdate(id, Array.emptyLongArray)), workerPartitionIndex)
 
 
   override def onPushRecv(id: Int,
                           deltaUpdate: Either[(Int, Array[Long]), Array[Long]],
-                          ps: ParameterServer[Either[(Int, Array[Long]), Array[Long]], (Int, Array[(Double, Int)])]): Unit =
+                          ps: ParameterServer[Int, Either[(Int, Array[Long]), Array[Long]], (Int, Array[(Double, Int)])]): Unit =
     deltaUpdate match {
       case Left((queryId, targetVector)) =>
         val topK = new mutable.ArrayBuffer[(Double, Int)]

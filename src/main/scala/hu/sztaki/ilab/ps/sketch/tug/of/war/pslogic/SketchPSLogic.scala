@@ -5,7 +5,8 @@ import hu.sztaki.ilab.ps.{ParameterServer, ParameterServerLogic}
 
 import scala.collection.mutable
 
-class SketchPSLogic(paramInit: => Int => Vector, paramUpdate: => (Vector,Vector) =>Vector) extends ParameterServerLogic[Either[Vector, (Long, Vector)], (Long, Array[(Long, Int)])]{
+class SketchPSLogic(paramInit: => Int => Vector, paramUpdate: => (Vector,Vector) =>Vector)
+  extends ParameterServerLogic[Int, Either[Vector, (Long, Vector)], (Long, Array[(Long, Int)])]{
 
   val model = new mutable.HashMap[Int,Vector]()
 
@@ -13,12 +14,12 @@ class SketchPSLogic(paramInit: => Int => Vector, paramUpdate: => (Vector,Vector)
   @transient lazy val update: (Vector, Vector) => Vector = paramUpdate
 
   override def onPullRecv(id: Int, workerPartitionIndex: Int,
-                          ps: ParameterServer[Either[Vector, (Long, Vector)], (Long, Array[(Long, Int)])]): Unit = {
+                          ps: ParameterServer[Int, Either[Vector, (Long, Vector)], (Long, Array[(Long, Int)])]): Unit = {
     ps.answerPull(id, Left(model.getOrElseUpdate(id, init(id))), workerPartitionIndex)
   }
 
   override def onPushRecv(id: Int, deltaUpdate: Either[Vector, (Long, Vector)],
-                          ps: ParameterServer[Either[Vector, (Long, Vector)], (Long, Array[(Long, Int)])]): Unit = {
+                          ps: ParameterServer[Int, Either[Vector, (Long, Vector)], (Long, Array[(Long, Int)])]): Unit = {
     deltaUpdate match {
       case Left(delta) =>
         val parameter = model.get(id) match {

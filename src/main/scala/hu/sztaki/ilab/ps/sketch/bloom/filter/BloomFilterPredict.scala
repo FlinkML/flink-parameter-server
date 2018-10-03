@@ -41,7 +41,7 @@ object BloomFilterPredict {
               iterationWaitTime: Long) : DataStream[(Int, Array[(Double, Int)])] = {
 
 
-    val workerLogic = new WorkerLogic[(Int, String),  Either[(Int, mutable.BitSet), mutable.BitSet], Any] {
+    val workerLogic = new WorkerLogic[(Int, String), Int,  Either[(Int, mutable.BitSet), mutable.BitSet], Any] {
 
       val queryBuffer = new mutable.HashMap[Int, Int]()
 
@@ -53,7 +53,7 @@ object BloomFilterPredict {
       * @param ps
       * Interface to ParameterServer.
       */
-    override def onRecv(data: (Int, String), ps: ParameterServerClient[Either[(Int, mutable.BitSet), mutable.BitSet], Any]): Unit = {
+    override def onRecv(data: (Int, String), ps: ParameterServerClient[Int, Either[(Int, mutable.BitSet), mutable.BitSet], Any]): Unit = {
       queryBuffer.update(data._2.hashCode, data._1)
       ps.pull(data._2.hashCode)
     }
@@ -69,7 +69,7 @@ object BloomFilterPredict {
         * Interface to ParameterServer.
         */
       override def onPullRecv(paramId: Int, paramValue:Either[(Int, mutable.BitSet), mutable.BitSet],
-                              ps: ParameterServerClient[Either[(Int, mutable.BitSet), mutable.BitSet], Any]): Unit = {
+                              ps: ParameterServerClient[Int, Either[(Int, mutable.BitSet), mutable.BitSet], Any]): Unit = {
 
         paramValue match {
           case Left((_, targetVector)) =>
@@ -88,7 +88,7 @@ object BloomFilterPredict {
 
     val hashFunc: Any => Int = x => Math.abs(x.hashCode())
 
-    val workerToPSPartitioner: WorkerToPS[ Either[(Int, mutable.BitSet), mutable.BitSet]] => Int = {
+    val workerToPSPartitioner: WorkerToPS[Int, Either[(Int, mutable.BitSet), mutable.BitSet]] => Int = {
       case WorkerToPS(_, msg) =>
         msg match {
           case Left(Pull(pId)) => hashFunc(pId) % psParallelism
@@ -96,7 +96,7 @@ object BloomFilterPredict {
         }
     }
 
-    val psToWorkerPartitioner: PSToWorker[ Either[(Int, mutable.BitSet), mutable.BitSet]] => Int = {
+    val psToWorkerPartitioner: PSToWorker[Int, Either[(Int, mutable.BitSet), mutable.BitSet]] => Int = {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 

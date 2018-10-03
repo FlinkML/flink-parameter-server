@@ -33,7 +33,7 @@ class PSOnlineMatrixFactorizationAndTopKGeneratorWorker(negativeSampleRate: Int,
                                                         workerParallelism: Int,
                                                         factorInitDesc: FactorInitializerDescriptor,
                                                         factorUpdate: FactorUpdater)
-  extends WorkerLogic[RichRating, LengthAndVector, TopKWorkerOutput] {
+  extends WorkerLogic[RichRating, UserId, LengthAndVector, TopKWorkerOutput] {
 
   val model = new mutable.HashMap[ItemId, LengthAndVector]()
 
@@ -46,7 +46,7 @@ class PSOnlineMatrixFactorizationAndTopKGeneratorWorker(negativeSampleRate: Int,
   var workerId: Int = -1
 
   override def onRecv(data: RichRating,
-                      ps: ParameterServerClient[LengthAndVector, TopKWorkerOutput]): Unit = {
+                      ps: ParameterServerClient[UserId, LengthAndVector, TopKWorkerOutput]): Unit = {
     if (workerId == -1) {
       workerId = data.targetWorker
     }
@@ -57,7 +57,7 @@ class PSOnlineMatrixFactorizationAndTopKGeneratorWorker(negativeSampleRate: Int,
   }
 
   override def onPullRecv(paramId: UserId, userAndLen: LengthAndVector,
-                          ps: ParameterServerClient[LengthAndVector, TopKWorkerOutput]): Unit = {
+                          ps: ParameterServerClient[UserId, LengthAndVector, TopKWorkerOutput]): Unit = {
     val rate = ratingBuffer synchronized {
       ratingBuffer(paramId).dequeue()
     }

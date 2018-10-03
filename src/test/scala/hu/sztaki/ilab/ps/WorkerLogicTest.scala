@@ -7,19 +7,19 @@ class WorkerLogicTest extends FlatSpec with PropertyChecks with Matchers {
 
   "pull limiter" should "limit pulls" in {
     type WOut = (Int, Long)
-    val worker = new WorkerLogic[Int, Long, WOut] {
-      override def onRecv(data: Int, ps: ParameterServerClient[Long, WOut]): Unit = {
+    val worker = new WorkerLogic[Int, Int, Long, WOut] {
+      override def onRecv(data: Int, ps: ParameterServerClient[Int, Long, WOut]): Unit = {
         ps.pull(data)
       }
 
       override def onPullRecv(paramId: Int,
                               paramValue: Long,
-                              ps: ParameterServerClient[Long, (Int, Long)]): Unit = {
+                              ps: ParameterServerClient[Int, Long, WOut]): Unit = {
 
       }
     }
 
-    val ps = new ParameterServerClient[Long, WOut] {
+    val ps = new ParameterServerClient[Int, Long, WOut] {
       var pullCounter = 0
 
       override def pull(id: Int): Unit = {

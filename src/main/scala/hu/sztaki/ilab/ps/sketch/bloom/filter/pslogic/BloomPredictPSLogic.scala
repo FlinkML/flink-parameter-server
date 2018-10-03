@@ -12,7 +12,7 @@ import scala.collection.mutable
   * @param K: Size of the return list (top-K)
   */
 class BloomPredictPSLogic(arraySize: Int, numHashes: Int, K: Int)
-  extends ParameterServerLogic[Either[(Int, mutable.BitSet), mutable.BitSet], (Int, Array[(Double, Int)])] {
+  extends ParameterServerLogic[Int, Either[(Int, mutable.BitSet), mutable.BitSet], (Int, Array[(Double, Int)])] {
 
   val model = new mutable.HashMap[Int, mutable.BitSet]()
 
@@ -26,7 +26,7 @@ class BloomPredictPSLogic(arraySize: Int, numHashes: Int, K: Int)
     * Interface for answering pulls and creating output.
     */
   override def onPullRecv(id: Int, workerPartitionIndex: Int,
-                          ps: ParameterServer[Either[(Int, mutable.BitSet), mutable.BitSet],
+                          ps: ParameterServer[Int, Either[(Int, mutable.BitSet), mutable.BitSet],
                                                      (Int, Array[(Double, Int)])]): Unit = {
     ps.answerPull(id, Left((0, model.getOrElse(id, mutable.BitSet.empty))), workerPartitionIndex)
   }
@@ -41,7 +41,7 @@ class BloomPredictPSLogic(arraySize: Int, numHashes: Int, K: Int)
     * Interface for answering pulls and creating output.
     */
   override def onPushRecv(id: Int, deltaUpdate: Either[(Int, mutable.BitSet), mutable.BitSet],
-                          ps: ParameterServer[Either[(Int, mutable.BitSet), mutable.BitSet], (Int, Array[(Double, Int)])]): Unit = {
+                          ps: ParameterServer[Int, Either[(Int, mutable.BitSet), mutable.BitSet], (Int, Array[(Double, Int)])]): Unit = {
     deltaUpdate match {
 
       case Left((queryId, targetVector)) =>

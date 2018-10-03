@@ -31,7 +31,7 @@ class PSOfflineMatrixFactorizationWorker(numFactors: Int,
                                          learningRate: Double,
                                          negativeSampleRate: Int,
                                          userMemory: Int,
-                                         iterations: Int) extends WorkerLogic[Either[EOF, Rating], Vector, (UserId, Vector)]{
+                                         iterations: Int) extends WorkerLogic[Either[EOF, Rating], ItemId, Vector, (UserId, Vector)]{
 
   private val log = LoggerFactory.getLogger(classOf[PSOfflineMatrixFactorization])
 
@@ -59,7 +59,7 @@ class PSOfflineMatrixFactorizationWorker(numFactors: Int,
   var EOFsReceived = 0
 
   override def onRecv(value: Either[EOF, Rating],
-                      ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
+                      ps: ParameterServerClient[ItemId, Vector, (UserId, Vector)]): Unit = {
 
     value match {
       case Right(rating) =>
@@ -131,7 +131,7 @@ class PSOfflineMatrixFactorizationWorker(numFactors: Int,
 
   override def onPullRecv(item: ItemId,
                           itemVec: Vector,
-                          ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
+                          ps: ParameterServerClient[ItemId, Vector, (UserId, Vector)]): Unit = {
     // to avoid concurrent modification of the stored ratings
     val (user, rating) = ratingBuffer synchronized {
       ratingBuffer(item).dequeue()

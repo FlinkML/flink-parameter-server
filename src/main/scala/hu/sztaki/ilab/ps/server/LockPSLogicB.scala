@@ -12,14 +12,14 @@ import scala.collection.mutable
   *  This multi request are been going to serve in the same time. The priority follows the first request order.
   *  If update is arrived lock will release or if queue is not empty answer the first and keep the lock active.
   */
-class LockPSLogicB[P](init: Int => P, update: (P, P) => P)
-  extends ParameterServerLogic[P, (Int, P)] {
+class LockPSLogicB[Id, P](init: Id => P, update: (P, P) => P)
+  extends ParameterServerLogic[Id, P, (Id, P)] {
 
-  val params = new mutable.HashMap[Int, (Boolean, P, mutable.Queue[Int])]()
+  val params = new mutable.HashMap[Id, (Boolean, P, mutable.Queue[Int])]()
 
-  override def onPullRecv(id: Int,
+  override def onPullRecv(id: Id,
                           workerPartitionIndex: Int,
-                          ps: ParameterServer[P, (Int, P)]): Unit = {
+                          ps: ParameterServer[Id, P, (Id, P)]): Unit = {
     val value = params.getOrElseUpdate(id, (false, init(id), new mutable.Queue[Int]()))
     value match {
       case (false, p, q) =>
@@ -32,7 +32,7 @@ class LockPSLogicB[P](init: Int => P, update: (P, P) => P)
     }
   }
 
-  override def onPushRecv(id: Int, deltaUpdate: P, ps: ParameterServer[P, (Int, P)]): Unit = {
+  override def onPushRecv(id: Id, deltaUpdate: P, ps: ParameterServer[Id, P, (Id, P)]): Unit = {
     params.get(id) match {
       case Some((isLocked, param, pullQueue)) =>
         val c = update(param, deltaUpdate)

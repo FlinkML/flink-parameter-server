@@ -19,7 +19,7 @@ object MinHash {
               psParallelism: Int,
               iterationWaitTime: Long) : DataStream[(Int, Array[Long])] = {
 
-    val workerLogic = new WorkerLogic[(String, Array[String]), Long, Array[String]] {
+    val workerLogic = new WorkerLogic[(String, Array[String]), Int, Long, Array[String]] {
 
       /**
       * Method called when new data arrives.
@@ -29,7 +29,7 @@ object MinHash {
       * @param ps
       * Interface to ParameterServer.
       */
-      override def onRecv(tweet: (String, Array[String]), ps: ParameterServerClient[Long, Array[String]]): Unit =
+      override def onRecv(tweet: (String, Array[String]), ps: ParameterServerClient[Int, Long, Array[String]]): Unit =
         for (word <- tweet._2) {
           ps.push(word.hashCode, tweet._1.toLong)
         }
@@ -47,7 +47,7 @@ object MinHash {
         */
       override def onPullRecv(paramId: Int,
                               paramValue: Long,
-                              ps: ParameterServerClient[Long, Array[String]]): Unit = ???
+                              ps: ParameterServerClient[Int, Long, Array[String]]): Unit = ???
     }
 
     val serverLogic = new StoredHashPSLogic(numHashes)

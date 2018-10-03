@@ -27,18 +27,18 @@ object TimeAwareTugOfWarPredict {
               pullLimit: Int,
               iterationWaitTime: Long): DataStream[((Int, Int), Array[(Double, Int)])] = {
 
-    val workerLogic = new WorkerLogic[(Int, String), Either[((Int, Int),Vector),  (Int, Vector)], Any] {
+    val workerLogic = new WorkerLogic[(Int, String), Int, Either[((Int, Int),Vector),  (Int, Vector)], Any] {
 
       val queryBuffer = new mutable.HashMap[Int, Int]()
 
       override def onRecv(data: (Int, String),
-                          ps: ParameterServerClient[Either[((Int, Int), Vector), (Int, Vector)], Any]): Unit = {
+                          ps: ParameterServerClient[Int, Either[((Int, Int), Vector), (Int, Vector)], Any]): Unit = {
         queryBuffer.update(data._2.hashCode, data._1)
         ps.pull(data._2.hashCode)
       }
 
       override def onPullRecv(paramId: Int, paramValue: Either[((Int, Int), Vector), (Int, Vector)],
-                              ps: ParameterServerClient[Either[((Int, Int), Vector), (Int, Vector)], Any]): Unit = {
+                              ps: ParameterServerClient[Int, Either[((Int, Int), Vector), (Int, Vector)], Any]): Unit = {
         paramValue match {
           case Left(((_, timeSlot), targetVector)) =>
 
@@ -54,7 +54,7 @@ object TimeAwareTugOfWarPredict {
 
     val hashFunc: Any => Int = x => Math.abs(x.hashCode())
 
-    val workerToPSPartitioner: WorkerToPS[ Either[((Int, Int), Vector),  (Int, Vector)]] => Int = {
+    val workerToPSPartitioner: WorkerToPS[Int, Either[((Int, Int), Vector),  (Int, Vector)]] => Int = {
       case WorkerToPS(_, msg) =>
         msg match {
           case Left(Pull(pId)) => hashFunc(pId) % psParallelism
@@ -62,7 +62,7 @@ object TimeAwareTugOfWarPredict {
         }
     }
 
-    val psToWorkerPartitioner: PSToWorker[ Either[((Int, Int), Vector),  (Int, Vector)]] => Int = {
+    val psToWorkerPartitioner: PSToWorker[Int, Either[((Int, Int), Vector),  (Int, Vector)]] => Int = {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 

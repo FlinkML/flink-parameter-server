@@ -26,6 +26,7 @@ class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
 
   "flink simple worker and PS communication" should "work" in {
 
+    type Id = Int
     type P = Array[Double]
     type T = (Int, P)
     type WOut = Unit
@@ -72,16 +73,16 @@ class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
         // @todo add real source
         src,
         // @todo add real worker logic
-        new WorkerLogic[T, P, WOut] {
+        new WorkerLogic[T, Id, P, WOut] {
           val waitingToAnswer = new mutable.HashMap[Int, mutable.Queue[Array[Double]]]()
 
-          override def onRecv(data: T, ps: ParameterServerClient[P, WOut]): Unit = {
+          override def onRecv(data: T, ps: ParameterServerClient[Id, P, WOut]): Unit = {
             ps.pull(data._1)
             val waitingQueue = waitingToAnswer.getOrElseUpdate(data._1, new mutable.Queue[Array[Double]]())
             waitingQueue += data._2
           }
 
-          override def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[P, WOut]): Unit = {
+          override def onPullRecv(paramId: Id, paramValue: P, ps: ParameterServerClient[Id, P, WOut]): Unit = {
             println(s"Received stuff: ${paramId}, ${paramValue.mkString(",")}")
             val delta = waitingToAnswer.get(paramId) match {
               case Some(q) => q.dequeue()
@@ -91,15 +92,15 @@ class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
             ps.push(paramId, delta)
           }
         },
-        new SimplePSLogic[P](initPS, updatePS),
-        (x: WorkerToPS[P]) => x.workerPartitionIndex,
-        (x: PSToWorker[P]) => x.workerPartitionIndex % numberOfPartitions,
+        new SimplePSLogic[Id, P](initPS, updatePS),
+        (x: WorkerToPS[Id, P]) => x.workerPartitionIndex,
+        (x: PSToWorker[Id, P]) => x.workerPartitionIndex % numberOfPartitions,
         4,
         4,
-        new SimpleWorkerReceiver[P],
-        new SimpleWorkerSender[P],
-        new SimplePSReceiver[P],
-        new SimplePSSender[P],
+        new SimpleWorkerReceiver[Id, P],
+        new SimpleWorkerSender[Id, P],
+        new SimplePSReceiver[Id, P],
+        new SimplePSSender[Id, P],
         10000
       )
 
@@ -150,27 +151,27 @@ class FlinkSimpleStackTest extends FlatSpec with PropertyChecks with Matchers {
     val outputDS: DataStream[Either[WOut, PSOut]] =
       FlinkParameterServer.transformWithModelLoad(modelSrc)(
         dataSrc,
-        new WorkerLogic[T, P, WOut] {
-          override def onRecv(data: Int, ps: ParameterServerClient[P, WOut]): Unit = {
+        new WorkerLogic[T, T, P, WOut] {
+          override def onRecv(data: Int, ps: ParameterServerClient[T, P, WOut]): Unit = {
             ps.pull(data)
           }
 
-          override def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[P, WOut]): Unit = {
+          override def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[T, P, WOut]): Unit = {
             ps.push(paramId, 1L)
           }
         },
-        new ParameterServerLogic[P, PSOut] {
+        new ParameterServerLogic[T, P, PSOut] {
           val params = new mutable.HashMap[Int, P]()
 
-          override def onPullRecv(id: T, workerPartitionIndex: T, ps: ParameterServer[P, (T, P)]): WOut = {
+          override def onPullRecv(id: T, workerPartitionIndex: T, ps: ParameterServer[T, P, (T, P)]): WOut = {
             ps.answerPull(id, params.getOrElseUpdate(id, 0), workerPartitionIndex)
           }
 
-          override def onPushRecv(id: T, deltaUpdate: P, ps: ParameterServer[P, (T, P)]): WOut = {
+          override def onPushRecv(id: T, deltaUpdate: P, ps: ParameterServer[T, P, (T, P)]): WOut = {
             params.put(id, params.getOrElseUpdate(id, 0) + deltaUpdate)
           }
 
-          override def close(ps: ParameterServer[P, (T, P)]): WOut = {
+          override def close(ps: ParameterServer[T, P, (T, P)]): WOut = {
             params.foreach(ps.output)
           }
         }, {

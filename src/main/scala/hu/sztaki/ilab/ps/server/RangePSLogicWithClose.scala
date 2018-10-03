@@ -4,14 +4,14 @@ import hu.sztaki.ilab.ps.{ParameterServer, ParameterServerLogic}
 import org.apache.flink.api.common.functions.RuntimeContext
 import org.apache.flink.configuration.Configuration
 
-class RangePSLogicWithClose[P](featureCount: Int, paramInit: => Int => P, paramUpdate: => (P, P) => P) extends ParameterServerLogic[P, (Int, P)] {
+class RangePSLogicWithClose[P](featureCount: Int, paramInit: => Int => P, paramUpdate: => (P, P) => P) extends ParameterServerLogic[Int, P, (Int, P)] {
   var startIndex = 0
   var params: Array[Option[P]] = _
 
   @transient lazy val init: (Int) => P = paramInit
   @transient lazy val update: (P, P) => P = paramUpdate
 
-  override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[P, (Int, P)]): Unit = {
+  override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[Int, P, (Int, P)]): Unit = {
     if (id - startIndex < 0) {
       println(id)
       println(params.mkString("[", ",", "]"))
@@ -25,7 +25,7 @@ class RangePSLogicWithClose[P](featureCount: Int, paramInit: => Int => P, paramU
   }
 
 
-  override def onPushRecv(id: Int, deltaUpdate: P, ps: ParameterServer[P, (Int, P)]): Unit = {
+  override def onPushRecv(id: Int, deltaUpdate: P, ps: ParameterServer[Int, P, (Int, P)]): Unit = {
     val index = id  - startIndex
     val c = params(index) match {
       case Some(q) =>
@@ -39,7 +39,7 @@ class RangePSLogicWithClose[P](featureCount: Int, paramInit: => Int => P, paramU
   /**
     * Method called when processing is finished.
     */
-  override def close(ps: ParameterServer[P, (Int, P)]): Unit =
+  override def close(ps: ParameterServer[Int, P, (Int, P)]): Unit =
     params.view.zipWithIndex.foreach{case(c: Option[P], id:Int) => c match {
       case Some(m) => ps.output((startIndex + id, m))
       case None => // Do nothing. The unused feature is not needed to write out.

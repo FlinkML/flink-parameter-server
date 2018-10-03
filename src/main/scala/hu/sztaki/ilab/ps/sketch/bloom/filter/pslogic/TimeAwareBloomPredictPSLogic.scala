@@ -12,12 +12,12 @@ import scala.collection.mutable
   * @param K: Size of the return list (top-K)
   */
 class TimeAwareBloomPredictPSLogic(arraySize: Int, numHashes: Int, K: Int)
-  extends ParameterServerLogic[Either[((Int, Int), Array[Int]),  (Int, Array[Int])], ((Int, Int), Array[(Double, Int)])] {
+  extends ParameterServerLogic[Int, Either[((Int, Int), Array[Int]),  (Int, Array[Int])], ((Int, Int), Array[(Double, Int)])] {
 
   val model = new mutable.HashMap[(Int, Int), Array[Int]]()
 
   override def onPullRecv(id: Int, workerPartitionIndex: Int,
-                          ps: ParameterServer[Either[((Int, Int), Array[Int]),  (Int, Array[Int])],
+                          ps: ParameterServer[Int, Either[((Int, Int), Array[Int]),  (Int, Array[Int])],
                                               ((Int, Int), Array[(Double, Int)])]): Unit = {
     model
       .filter(_._1._1 == id)
@@ -29,7 +29,7 @@ class TimeAwareBloomPredictPSLogic(arraySize: Int, numHashes: Int, K: Int)
 
   override def onPushRecv(id: Int,
                           deltaUpdate: Either[((Int, Int), Array[Int]), (Int, Array[Int])],
-                          ps: ParameterServer[Either[((Int, Int), Array[Int]),  (Int, Array[Int])],
+                          ps: ParameterServer[Int, Either[((Int, Int), Array[Int]),  (Int, Array[Int])],
                                               ((Int, Int), Array[(Double, Int)])]): Unit = {
     deltaUpdate match {
       case Left(((queryId, timeSlot), targetVector)) =>

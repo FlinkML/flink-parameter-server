@@ -14,7 +14,7 @@ class PSTopKGeneratorWorker(workerK: Int,
                             bucketSize: Int,
                             workerParallelism: Int,
                             pruning: LEMPPruningStrategy)
-  extends BaseMFWorkerLogic[RichRating, LengthAndVector, TopKWorkerOutput] {
+  extends BaseMFWorkerLogic[RichRating, UserId, LengthAndVector, TopKWorkerOutput] {
 
   val itemIdsDescendingByLength = new mutable.TreeSet[(Double, ItemId)]()(implicitly[Ordering[(Double, ItemId)]].reverse)
   val itemIdsBuffer = new ArrayBuffer[ItemId] // needed for negative sample generation, where random access to a random element is required
@@ -23,7 +23,7 @@ class PSTopKGeneratorWorker(workerK: Int,
   var workerId: Int = -1
   def invalidUser(value: VectorLength): Boolean = value == -1
 
-  override def onRecv(data: RichRating, ps: ParameterServerClient[LengthAndVector, TopKWorkerOutput]): Unit = {
+  override def onRecv(data: RichRating, ps: ParameterServerClient[UserId, LengthAndVector, TopKWorkerOutput]): Unit = {
     if (workerId == -1) workerId = data.targetWorker
     ratingBuffer synchronized {
       ratingBuffer.getOrElseUpdate(data.base.user, mutable.Queue[RichRating]()).enqueue(data)
@@ -33,7 +33,7 @@ class PSTopKGeneratorWorker(workerK: Int,
 
 
   override def onPullRecv(paramId: UserId, userAndLen: LengthAndVector,
-                          ps: ParameterServerClient[LengthAndVector, TopKWorkerOutput]): Unit = {
+                          ps: ParameterServerClient[UserId, LengthAndVector, TopKWorkerOutput]): Unit = {
     val rate = ratingBuffer synchronized {
       ratingBuffer(paramId).dequeue()
     }
@@ -113,7 +113,7 @@ class PSTopKGeneratorWorker(workerK: Int,
     ps.output((rate, topK))
   }
 
-  override def updateModel(id: Int, param: (LengthAndVector)): Unit = {
+  override def updateModel(id: UserId, param: (LengthAndVector)): Unit = {
     model(id) = param
     itemIdsDescendingByLength += ((param._1, id))
   }

@@ -174,7 +174,7 @@ object PABinaryClassificationOffline {
       }
     }, x => x)
 
-    val serverLogic = new SimplePSLogic[Double](
+    val serverLogic = new SimplePSLogic[Int, Double](
       x => RandomModelInitializer.init(), _ + _)
 
     val paFilter = pafType match {
@@ -184,7 +184,7 @@ object PABinaryClassificationOffline {
       case _ => throw new IllegalArgumentException("PassiveAggressiveFilter type can be only in the set (0, 1, 2)")
     }
 
-    val workerLogic = new WorkerLogic[LabeledOptionData, Double, WOut] {
+    val workerLogic = new WorkerLogic[LabeledOptionData, Int, Double, WOut] {
 
       val trainingData = ArrayBuffer[LabeledData]()
       val testData = ArrayBuffer[SparseVector[Double]]()
@@ -205,7 +205,7 @@ object PABinaryClassificationOffline {
       val canPull: Condition = psLock.newCondition()
 
       override def onRecv(data: LabeledOptionData,
-                          ps: ParameterServerClient[Double, WOut]): Unit = {
+                          ps: ParameterServerClient[Int, Double, WOut]): Unit = {
 
         data match {
           case (eof: EOFSign[Double], None) =>
@@ -317,7 +317,7 @@ object PABinaryClassificationOffline {
 
       override def onPullRecv(modelId: Int,
                               modelValue: Double,
-                              ps: ParameterServerClient[Double, WOut]): Unit = {
+                              ps: ParameterServerClient[Int, Double, WOut]): Unit = {
         // we assume that the PS client is not thread safe, so we need to sync when we use it.
         psLock.lock()
         try {
@@ -359,14 +359,14 @@ object PABinaryClassificationOffline {
     }
 
 
-    val paramPartitioner: WorkerToPS[Double] => Int = {
+    val paramPartitioner: WorkerToPS[Int, Double] => Int = {
       case WorkerToPS(partitionId, msg) => msg match {
         case Left(Pull(paramId)) => Math.abs(paramId) % psParallelism
         case Right(Push(paramId, delta)) => Math.abs(paramId) % psParallelism
       }
     }
 
-    val wInPartition: PSToWorker[Double] => Int = {
+    val wInPartition: PSToWorker[Int, Double] => Int = {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 
@@ -376,10 +376,10 @@ object PABinaryClassificationOffline {
       wInPartition = wInPartition,
       workerParallelism,
       psParallelism,
-      new SimpleWorkerReceiver[Double](),
-      new SimpleWorkerSender[Double](),
-      new SimplePSReceiver[Double](),
-      new SimplePSSender[Double](),
+      new SimpleWorkerReceiver[Int, Double](),
+      new SimpleWorkerSender[Int, Double](),
+      new SimplePSReceiver[Int, Double](),
+      new SimplePSSender[Int, Double](),
       iterationWaitTime)
 //      .setParallelism(psParallelism)
 

@@ -25,19 +25,19 @@ object TugOfWarPredict {
                       iterationWaitTime: Long): DataStream[(Int, Array[(Double, Int)])] = {
 
 
-    val workerLogic = new WorkerLogic[(Int, String),  Either[(Int, Vector), Vector], Any] {
+    val workerLogic = new WorkerLogic[(Int, String), Int, Either[(Int, Vector), Vector], Any] {
 
       val queryBuffer = new mutable.HashMap[Int, Int]()
 
       override def onRecv(data: (Int, String),
-                          ps: ParameterServerClient[ Either[(Int, Vector), Vector], Any]): Unit = {
+                          ps: ParameterServerClient[Int, Either[(Int, Vector), Vector], Any]): Unit = {
         queryBuffer.update(data._2.hashCode, data._1)
         ps.pull(data._2.hashCode)
       }
 
       override def onPullRecv(paramId: Int,
                               paramValue:  Either[(Int, Vector), Vector],
-                              ps: ParameterServerClient[ Either[(Int, Vector), Vector], Any]): Unit = {
+                              ps: ParameterServerClient[Int, Either[(Int, Vector), Vector], Any]): Unit = {
 
         paramValue match {
           case Left((_, targetVector)) =>
@@ -56,7 +56,7 @@ object TugOfWarPredict {
     val serverLogic = new SketchPredictPSLogic(numHashes, numMeans, K)
 
 
-    val workerToPSPartitioner: WorkerToPS[ Either[(Int, Vector), Vector]] => Int = {
+    val workerToPSPartitioner: WorkerToPS[Int, Either[(Int, Vector), Vector]] => Int = {
       case WorkerToPS(_, msg) =>
         msg match {
           case Left(Pull(pId)) => hashFunc(pId) % psParallelism
@@ -64,7 +64,7 @@ object TugOfWarPredict {
         }
     }
 
-    val psToWorkerPartitioner: PSToWorker[ Either[(Int, Vector), Vector]] => Int = {
+    val psToWorkerPartitioner: PSToWorker[Int, Either[(Int, Vector), Vector]] => Int = {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 

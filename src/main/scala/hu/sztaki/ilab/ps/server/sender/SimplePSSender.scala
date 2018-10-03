@@ -3,10 +3,10 @@ package hu.sztaki.ilab.ps.server.sender
 import hu.sztaki.ilab.ps.PSSender
 import hu.sztaki.ilab.ps.entities.{PSToWorker, PullAnswer}
 
-class SimplePSSender[P] extends PSSender[PSToWorker[P], P]{
+class SimplePSSender[Id, P] extends PSSender[PSToWorker[Id, P], Id, P]{
 
-  override def onPullAnswer(id: Int, value: P, workerPartitionIndex: Int, collectAnswerMsg: (PSToWorker[P]) => Unit): Unit = {
-    collectAnswerMsg(PSToWorker[P](workerPartitionIndex, PullAnswer(id, value)))
+  override def onPullAnswer(id: Id, value: P, workerPartitionIndex: Int, collectAnswerMsg: (PSToWorker[Id, P]) => Unit): Unit = {
+    collectAnswerMsg(PSToWorker[Id, P](workerPartitionIndex, PullAnswer(id, value)))
   }
 
 }

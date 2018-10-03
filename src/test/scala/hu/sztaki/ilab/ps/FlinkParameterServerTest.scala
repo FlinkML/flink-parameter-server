@@ -32,28 +32,28 @@ class FlinkParameterServerTest extends FlatSpec with PropertyChecks with Matcher
 
     val outputDS =
       transform(src,
-        new WorkerLogic[Int, P, WOut] {
+        new WorkerLogic[Int, Int, P, WOut] {
           val dataQ = new mutable.Queue[Int]()
 
-          override def onRecv(data: Int, ps: ParameterServerClient[P, WOut]): Unit = {
+          override def onRecv(data: Int, ps: ParameterServerClient[Int, P, WOut]): Unit = {
             dataQ.enqueue(data)
             ps.pull(data % 2)
           }
 
-          override def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[P, WOut]): Unit = {
+          override def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[Int, P, WOut]): Unit = {
             val xs = dataQ.dequeueAll(x => x % 2 == paramId)
             ps.push(paramId, mutable.Queue(xs: _*))
           }
         },
-        new ParameterServerLogic[P, String] {
+        new ParameterServerLogic[Int, P, String] {
           val params = new mutable.HashMap[Int, mutable.Queue[Int]]()
 
-          override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[P, String]): Unit = {
+          override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[Int, P, String]): Unit = {
             val param = params.getOrElseUpdate(id, new mutable.Queue[Int]())
             ps.answerPull(id, param, workerPartitionIndex)
           }
 
-          override def onPushRecv(id: Int, deltaUpdate: P, ps: ParameterServer[P, String]): Unit = {
+          override def onPushRecv(id: Int, deltaUpdate: P, ps: ParameterServer[Int, P, String]): Unit = {
             params(id).enqueue(deltaUpdate: _*)
             ps.output(params(id).mkString(","))
           }
@@ -66,12 +66,12 @@ class FlinkParameterServerTest extends FlatSpec with PropertyChecks with Matcher
         (x: (Int, Array[String])) => x._2.head.toInt,
         4,
         4,
-        new WorkerReceiver[WorkerIn, P] {
-          override def onPullAnswerRecv(msg: WorkerIn, pullHandler: PullAnswer[P] => Unit): Unit = {
+        new WorkerReceiver[WorkerIn, Int, P] {
+          override def onPullAnswerRecv(msg: WorkerIn, pullHandler: PullAnswer[Int, P] => Unit): Unit = {
             pullHandler(PullAnswer(msg._1, mutable.Queue(msg._2.tail.map(_.toInt): _*)))
           }
         },
-        new WorkerSender[WorkerOut, P] {
+        new WorkerSender[WorkerOut, Int, P] {
           override def onPull(id: Int, collectAnswerMsg: WorkerOut => Unit, partitionId: Int): Unit = {
             collectAnswerMsg((true, Array(partitionId, id)))
           }
@@ -80,7 +80,7 @@ class FlinkParameterServerTest extends FlatSpec with PropertyChecks with Matcher
             collectAnswerMsg((false, Array(id, deltaUpdate: _*)))
           }
         },
-        new PSReceiver[(Boolean, Array[Int]), P] {
+        new PSReceiver[(Boolean, Array[Int]), Int, P] {
           override def onWorkerMsg(msg: (Boolean, Array[Int]), onPullRecv: (Int, Int) => Unit, onPushRecv: (Int, P) => Unit): Unit = {
             msg match {
               case (true, Array(partitionId, id)) =>
@@ -90,7 +90,7 @@ class FlinkParameterServerTest extends FlatSpec with PropertyChecks with Matcher
             }
           }
         },
-        new PSSender[WorkerIn, P] {
+        new PSSender[WorkerIn, Int, P] {
           override def onPullAnswer(id: Int,
                                     value: P,
                                     workerPartitionIndex: Int,

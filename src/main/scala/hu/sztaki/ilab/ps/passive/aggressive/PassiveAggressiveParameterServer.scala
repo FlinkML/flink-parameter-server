@@ -263,15 +263,15 @@ object PassiveAggressiveParameterServer {
       if (rangePartitioning) {
         new RangePSLogicWithClose[Param](featureCount, init, add)
       } else {
-        new SimplePSLogicWithClose[Param](init, add)
+        new SimplePSLogicWithClose[Int, Param](init, add)
       }
 
-    val paramPartitioner: WorkerToPS[Param] => Int =
+    val paramPartitioner: WorkerToPS[Int, Param] => Int =
       if (rangePartitioning) {
         rangePartitionerPS(featureCount)(psParallelism)
       } else {
         val partitonerFunction = (paramId: Int) => Math.abs(paramId) % psParallelism
-        val p: WorkerToPS[Param] => Int = {
+        val p: WorkerToPS[Int, Param] => Int = {
           case WorkerToPS(_, msg) => msg match {
             case Left(Pull(paramId)) => partitonerFunction(paramId)
             case Right(Push(paramId, _)) => partitonerFunction(paramId)
@@ -281,7 +281,7 @@ object PassiveAggressiveParameterServer {
       }
 
     val workerLogic = WorkerLogic.addPullLimiter( // adding pull limiter to avoid iteration deadlock
-      new WorkerLogic[Vec, Param, (VecId, Label)] {
+      new WorkerLogic[Vec, Int, Param, (VecId, Label)] {
 
         val paramWaitingQueue = new mutable.HashMap[
           Int,
@@ -289,7 +289,7 @@ object PassiveAggressiveParameterServer {
           ]()
 
         override def onRecv(data: Vec,
-                            ps: ParameterServerClient[Param, (VecId, Label)]): Unit = {
+                            ps: ParameterServerClient[Int, Param, (VecId, Label)]): Unit = {
           // pulling parameters and buffering data while waiting for parameters
 
           val vector = ev.vector(data)
@@ -310,7 +310,7 @@ object PassiveAggressiveParameterServer {
 
         override def onPullRecv(paramId: Int,
                                 modelValue: Param,
-                                ps: ParameterServerClient[Param, (VecId, Label)]) {
+                                ps: ParameterServerClient[Int, Param, (VecId, Label)]) {
           // store the received parameters and train/predict when all corresponding parameters arrived for a vector
           val q = paramWaitingQueue(paramId)
           val (restedData, waitingValues) = q.dequeue()
@@ -340,13 +340,13 @@ object PassiveAggressiveParameterServer {
       }, pullLimit)
 
 
-    val wInPartition: PSToWorker[Param] => Int = {
+    val wInPartition: PSToWorker[Int, Param] => Int = {
       case PSToWorker(workerPartitionIndex, _) => workerPartitionIndex
     }
 
     val modelUpdates = model match {
       case Some(m) => FlinkParameterServer.transformWithModelLoad[
-        Vec, Param, (FeatureId, Param),
+        Vec, Int, Param, (FeatureId, Param),
         (VecId, Label)](m)(
         inputSource, workerLogic, serverLogic,
         paramPartitioner,
@@ -355,27 +355,27 @@ object PassiveAggressiveParameterServer {
         psParallelism,
         iterationWaitTime)
       case None => FlinkParameterServer.transform[
-        Vec, Param, (FeatureId, Param),
-        (VecId, Label), PSToWorker[Param], WorkerToPS[Param]](
+        Vec, Int, Param, (FeatureId, Param),
+        (VecId, Label), PSToWorker[Int, Param], WorkerToPS[Int, Param]](
         inputSource, workerLogic, serverLogic,
         paramPartitioner,
         wInPartition,
         workerParallelism,
         psParallelism,
-        new SimpleWorkerReceiver[Param](),
-        new SimpleWorkerSender[Param](),
-        new SimplePSReceiver[Param](),
-        new SimplePSSender[Param](),
+        new SimpleWorkerReceiver[Int, Param](),
+        new SimpleWorkerSender[Int, Param](),
+        new SimplePSReceiver[Int, Param](),
+        new SimplePSSender[Int, Param](),
         iterationWaitTime)
     }
     modelUpdates
   }
 
-  def rangePartitionerPS[P](featureCount: Int)(psParallelism: Int): (WorkerToPS[P]) => Int = {
+  def rangePartitionerPS[P](featureCount: Int)(psParallelism: Int): (WorkerToPS[Int, P]) => Int = {
     val partitionSize = Math.ceil(featureCount.toDouble / psParallelism).toInt
     val partitonerFunction = (paramId: Int) => Math.abs(paramId) / partitionSize
 
-    val paramPartitioner: WorkerToPS[P] => Int = {
+    val paramPartitioner: WorkerToPS[Int, P] => Int = {
       case WorkerToPS(_, msg) => msg match {
         case Left(Pull(paramId)) => partitonerFunction(paramId)
         case Right(Push(paramId, _)) => partitonerFunction(paramId)

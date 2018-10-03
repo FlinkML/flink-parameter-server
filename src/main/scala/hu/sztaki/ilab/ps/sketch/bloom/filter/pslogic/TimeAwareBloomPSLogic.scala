@@ -8,13 +8,13 @@ import scala.collection.mutable
 /**
   * Server logic for storing and updating bloom filters for each timeslot
   */
-class TimeAwareBloomPSLogic  extends ParameterServerLogic[(Int, Vector), ((Int, Int), mutable.BitSet)]{
+class TimeAwareBloomPSLogic  extends ParameterServerLogic[Int, (Int, Vector), ((Int, Int), mutable.BitSet)]{
 
   val model = new mutable.HashMap[(Int, Int), mutable.ArrayBuffer[Int]]()
 
-  override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[(Int, Vector), ((Int, Int), mutable.BitSet)]): Unit = ???
+  override def onPullRecv(id: Int, workerPartitionIndex: Int, ps: ParameterServer[Int, (Int, Vector), ((Int, Int), mutable.BitSet)]): Unit = ???
 
-  override def onPushRecv(id: Int, deltaUpdate: (Int, Vector), ps: ParameterServer[(Int, Vector), ((Int, Int), mutable.BitSet)]): Unit = {
+  override def onPushRecv(id: Int, deltaUpdate: (Int, Vector), ps: ParameterServer[Int, (Int, Vector), ((Int, Int), mutable.BitSet)]): Unit = {
     val param = model.getOrElseUpdate((id, deltaUpdate._1), new mutable.ArrayBuffer[Int]())
     for(elem <- deltaUpdate._2){
       param += elem
@@ -22,7 +22,7 @@ class TimeAwareBloomPSLogic  extends ParameterServerLogic[(Int, Vector), ((Int, 
   }
 
 
-  override def close(ps: ParameterServer[(Int, Vector), ((Int, Int), mutable.BitSet)]): Unit = {
+  override def close(ps: ParameterServer[Int, (Int, Vector), ((Int, Int), mutable.BitSet)]): Unit = {
     model.foreach{case(id, c) =>
       val as = mutable.BitSet.empty
       c.foreach(as += _)

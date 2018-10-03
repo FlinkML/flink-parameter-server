@@ -12,12 +12,14 @@ import scala.util.{Success, Try}
   *
   * @tparam T
   * Type of incoming data.
+  * @tparam Id
+  * Type of parameter identifiers.
   * @tparam P
   * Type of parameters.
   * @tparam WOut
   * Type of worker output.
   */
-trait WorkerLogic[T, P, WOut] extends LooseWorkerLogic[T, P, P, WOut]
+trait WorkerLogic[T, Id, P, WOut] extends LooseWorkerLogic[T, Id, P, P, WOut]
 
 /**
   * Logic of the worker, that stores and processes the data.
@@ -25,14 +27,16 @@ trait WorkerLogic[T, P, WOut] extends LooseWorkerLogic[T, P, P, WOut]
   *
   * @tparam T
   * Type of incoming data.
+  * @tparam Id
+  * Type of parameter identifiers.
   * @tparam PullP
-  * Type of parameters for pull.*
+  * Type of parameters for pull.
   * @tparam PushP
   * Type of parameters for push.
   * @tparam WOut
   * Type of worker output.
   */
-trait LooseWorkerLogic[T, PullP, PushP, WOut] extends Serializable {
+trait LooseWorkerLogic[T, Id, PullP, PushP, WOut] extends Serializable {
 
   /**
     * Method called when the Flink operator is created
@@ -47,7 +51,7 @@ trait LooseWorkerLogic[T, PullP, PushP, WOut] extends Serializable {
     * @param ps
     * Interface to ParameterServer.
     */
-  def onRecv(data: T, ps: ParameterServerClient[PushP, WOut]): Unit
+  def onRecv(data: T, ps: ParameterServerClient[Id, PushP, WOut]): Unit
 
   /**
     * Method called when an answer arrives to a pull message.
@@ -60,7 +64,7 @@ trait LooseWorkerLogic[T, PullP, PushP, WOut] extends Serializable {
     * @param ps
     * Interface to ParameterServer.
     */
-  def onPullRecv(paramId: Int, paramValue: PullP, ps: ParameterServerClient[PushP, WOut]): Unit
+  def onPullRecv(paramId: Id, paramValue: PullP, ps: ParameterServerClient[Id, PushP, WOut]): Unit
 
   /**
     * Method called when processing is finished.
@@ -84,27 +88,29 @@ object WorkerLogic {
     * Limit of unanswered pulls at a worker instance.
     * @tparam T
     * Type of training data.
-    * @tparam P
+    * @tparam Id
+    * Type of parameter identifiers.
+   * @tparam P
     * Type of parameters.
     * @tparam WOut
     * Type of worker output.
     * @return
     * [[WorkerLogic]] that limits pulls.
     */
-  def addBlockingPullLimiter[T, P, WOut, WLogic <: WorkerLogic[T, P, WOut]](workerLogic: WLogic,
-                                                                            pullLimit: Int): WorkerLogic[T, P, WOut] = {
-    new WorkerLogic[T, P, WOut] {
+  def addBlockingPullLimiter[T, Id, P, WOut, WLogic <: WorkerLogic[T, Id, P, WOut]](workerLogic: WLogic,
+                                                                            pullLimit: Int): WorkerLogic[T, Id, P, WOut] = {
+    new WorkerLogic[T, Id, P, WOut] {
 
       private var pullCounter = 0
 
       val psLock = new ReentrantLock()
       val canPull: Condition = psLock.newCondition()
 
-      val wrappedPS = new ParameterServerClient[P, WOut] {
+      val wrappedPS = new ParameterServerClient[Id, P, WOut] {
 
-        private var ps: ParameterServerClient[P, WOut] = _
+        private var ps: ParameterServerClient[Id, P, WOut] = _
 
-        def setPS(ps: ParameterServerClient[P, WOut]): Unit = {
+        def setPS(ps: ParameterServerClient[Id, P, WOut]): Unit = {
           psLock.lock()
           try {
             this.ps = ps
@@ -113,7 +119,7 @@ object WorkerLogic {
           }
         }
 
-        override def pull(id: Int): Unit = {
+        override def pull(id: Id): Unit = {
           psLock.lock()
           try {
             while (pullCounter >= pullLimit) {
@@ -127,7 +133,7 @@ object WorkerLogic {
           }
         }
 
-        override def push(id: Int, deltaUpdate: P): Unit = {
+        override def push(id: Id, deltaUpdate: P): Unit = {
           psLock.lock()
           try {
             ps.push(id, deltaUpdate)
@@ -146,14 +152,14 @@ object WorkerLogic {
         }
       }
 
-      override def onRecv(data: T, ps: ParameterServerClient[P, WOut]): Unit = {
+      override def onRecv(data: T, ps: ParameterServerClient[Id, P, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onRecv(data, wrappedPS)
       }
 
-      override def onPullRecv(paramId: Int,
+      override def onPullRecv(paramId: Id,
                               paramValue: P,
-                              ps: ParameterServerClient[P, WOut]): Unit = {
+                              ps: ParameterServerClient[Id, P, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onPullRecv(paramId, paramValue, wrappedPS)
         psLock.lock()
@@ -178,6 +184,8 @@ object WorkerLogic {
     * Limit of unanswered pulls at a worker instance.
     * @tparam T
     * Type of training data.
+    * @tparam Id
+    * Type of parameter identifiers.
     * @tparam P
     * Type of parameters.
     * @tparam WOut
@@ -185,22 +193,22 @@ object WorkerLogic {
     * @return
     * [[WorkerLogic]] that limits pulls.
     */
-  def addPullLimiter[T, P, WOut](workerLogic: WorkerLogic[T, P, WOut],
-                                 pullLimit: Int): WorkerLogic[T, P, WOut] = {
-    new WorkerLogic[T, P, WOut] {
+  def addPullLimiter[T, Id, P, WOut](workerLogic: WorkerLogic[T, Id, P, WOut],
+                                 pullLimit: Int): WorkerLogic[T, Id, P, WOut] = {
+    new WorkerLogic[T, Id, P, WOut] {
 
       private var pullCounter = 0
-      private val pullQueue = mutable.Queue[Int]()
+      private val pullQueue = mutable.Queue[Id]()
 
-      val wrappedPS = new ParameterServerClient[P, WOut] {
+      val wrappedPS = new ParameterServerClient[Id, P, WOut] {
 
-        private var ps: ParameterServerClient[P, WOut] = _
+        private var ps: ParameterServerClient[Id, P, WOut] = _
 
-        def setPS(ps: ParameterServerClient[P, WOut]): Unit = {
+        def setPS(ps: ParameterServerClient[Id, P, WOut]): Unit = {
           this.ps = ps
         }
 
-        override def pull(id: Int): Unit = {
+        override def pull(id: Id): Unit = {
           pullQueue synchronized {
             if (pullCounter < pullLimit) {
               pullCounter += 1
@@ -211,7 +219,7 @@ object WorkerLogic {
           }
         }
 
-        override def push(id: Int, deltaUpdate: P): Unit = {
+        override def push(id: Id, deltaUpdate: P): Unit = {
           ps.push(id, deltaUpdate)
         }
 
@@ -220,14 +228,14 @@ object WorkerLogic {
         }
       }
 
-      override def onRecv(data: T, ps: ParameterServerClient[P, WOut]): Unit = {
+      override def onRecv(data: T, ps: ParameterServerClient[Id, P, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onRecv(data, wrappedPS)
       }
 
-      override def onPullRecv(paramId: Int,
+      override def onPullRecv(paramId: Id,
                               paramValue: P,
-                              ps: ParameterServerClient[P, WOut]): Unit = {
+                              ps: ParameterServerClient[Id, P, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onPullRecv(paramId, paramValue, wrappedPS)
         pullQueue synchronized {
@@ -252,6 +260,8 @@ object WorkerLogic {
     * Limit of unanswered pulls at a worker instance.
     * @tparam T
     * Type of training data.
+    * @tparam Id
+    * Type of parameter identifiers.
     * @tparam PullP
     * Type of Pull parameters.
     * @tparam PushP
@@ -261,22 +271,22 @@ object WorkerLogic {
     * @return
     * [[WorkerLogic]] that limits pulls.
     */
-  def addPullLimiter[T, PullP, PushP, WOut](workerLogic: LooseWorkerLogic[T, PullP, PushP, WOut],
-                                 pullLimit: Int): LooseWorkerLogic[T, PullP, PushP, WOut] =
-    new LooseWorkerLogic[T, PullP, PushP, WOut] {
+  def addPullLimiter[T, Id, PullP, PushP, WOut](workerLogic: LooseWorkerLogic[T, Id, PullP, PushP, WOut],
+                                 pullLimit: Int): LooseWorkerLogic[T, Id, PullP, PushP, WOut] =
+    new LooseWorkerLogic[T, Id, PullP, PushP, WOut] {
 
       private var pullCounter = 0
-      private val pullQueue = mutable.Queue[Int]()
+      private val pullQueue = mutable.Queue[Id]()
 
-      val wrappedPS = new ParameterServerClient[PushP, WOut] {
+      val wrappedPS = new ParameterServerClient[Id, PushP, WOut] {
 
-        private var ps: ParameterServerClient[PushP, WOut] = _
+        private var ps: ParameterServerClient[Id, PushP, WOut] = _
 
-        def setPS(ps: ParameterServerClient[PushP, WOut]): Unit = {
+        def setPS(ps: ParameterServerClient[Id, PushP, WOut]): Unit = {
           this.ps = ps
         }
 
-        override def pull(id: Int): Unit = {
+        override def pull(id: Id): Unit = {
           pullQueue synchronized {
             if (pullCounter < pullLimit) {
               pullCounter += 1
@@ -287,7 +297,7 @@ object WorkerLogic {
           }
         }
 
-        override def push(id: Int, deltaUpdate: PushP): Unit = {
+        override def push(id: Id, deltaUpdate: PushP): Unit = {
           ps.push(id, deltaUpdate)
         }
 
@@ -296,14 +306,14 @@ object WorkerLogic {
         }
       }
 
-      override def onRecv(data: T, ps: ParameterServerClient[PushP, WOut]): Unit = {
+      override def onRecv(data: T, ps: ParameterServerClient[Id, PushP, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onRecv(data, wrappedPS)
       }
 
-      override def onPullRecv(paramId: Int,
+      override def onPullRecv(paramId: Id,
                               paramValue: PullP,
-                              ps: ParameterServerClient[PushP, WOut]): Unit = {
+                              ps: ParameterServerClient[Id, PushP, WOut]): Unit = {
         wrappedPS.setPS(ps)
         workerLogic.onPullRecv(paramId, paramValue, wrappedPS)
         pullQueue synchronized {
@@ -322,12 +332,14 @@ object WorkerLogic {
   *
   * @tparam T
   * Type of incoming data.
+  * @tparam Id
+  * Type of parameter identifiers.
   * @tparam P
   * Type of parameters.
   * @tparam WOut
   * Type of worker output.
   */
-trait WorkerLogicWithFuture[T, P, WOut] extends WorkerLogic[T, P, WOut] {
+trait WorkerLogicWithFuture[T, Id, P, WOut] extends WorkerLogic[T, Id, P, WOut] {
 
   // TODO test performance (memory and computation time) against simple implementation
   // TODO test
@@ -340,26 +352,26 @@ trait WorkerLogicWithFuture[T, P, WOut] extends WorkerLogic[T, P, WOut] {
     * @param ps
     * Interface to ParameterServer with [[Future]] in pulls.
     */
-  def onDataRecv(data: T, ps: PSClientWithFuture[P, WOut]): Unit
+  def onDataRecv(data: T, ps: PSClientWithFuture[Id, P, WOut]): Unit
 
-  private val pullWaiter = mutable.HashMap[Int, mutable.Queue[PullAnswerFuture[P]]]()
+  private val pullWaiter = mutable.HashMap[Id, mutable.Queue[PullAnswerFuture[Id, P]]]()
 
-  private val psClient = new PSClientWithFuture[P, WOut] {
+  private val psClient = new PSClientWithFuture[Id, P, WOut] {
 
-    private var ps: ParameterServerClient[P, WOut] = _
+    private var ps: ParameterServerClient[Id, P, WOut] = _
 
-    def setPS(ps: ParameterServerClient[P, WOut]): Unit = {
+    def setPS(ps: ParameterServerClient[Id, P, WOut]): Unit = {
       this.ps = ps
     }
 
-    override def pull(id: Int): Future[(Int, P)] = {
-      val pullAnswerFuture = PullAnswerFuture[P](id)
+    override def pull(id: Id): Future[(Id, P)] = {
+      val pullAnswerFuture = PullAnswerFuture[Id, P](id)
       pullWaiter.getOrElseUpdate(id, mutable.Queue.empty)
         .enqueue(pullAnswerFuture)
       pullAnswerFuture
     }
 
-    override def push(id: Int, deltaUpdate: P): Unit = {
+    override def push(id: Id, deltaUpdate: P): Unit = {
       ps.push(id, deltaUpdate)
     }
 
@@ -376,7 +388,7 @@ trait WorkerLogicWithFuture[T, P, WOut] extends WorkerLogic[T, P, WOut] {
     * @param ps
     * Interface to ParameterServer.
     */
-  override def onRecv(data: T, ps: ParameterServerClient[P, WOut]): Unit = {
+  override def onRecv(data: T, ps: ParameterServerClient[Id, P, WOut]): Unit = {
     psClient.setPS(ps)
     onDataRecv(data, psClient)
   }
@@ -392,31 +404,31 @@ trait WorkerLogicWithFuture[T, P, WOut] extends WorkerLogic[T, P, WOut] {
     * @param ps
     * Interface to ParameterServer.
     */
-  override def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[P, WOut]): Unit = {
+  override def onPullRecv(paramId: Id, paramValue: P, ps: ParameterServerClient[Id, P, WOut]): Unit = {
     pullWaiter(paramId).dequeue().pullArrived(paramId, paramValue)
   }
 
 }
 
-trait PSClientWithFuture[P, WorkerOut] extends Serializable {
-  def pull(id: Int): Future[(Int, P)]
+trait PSClientWithFuture[Id, P, WorkerOut] extends Serializable {
+  def pull(id: Id): Future[(Id, P)]
 
-  def push(id: Int, deltaUpdate: P): Unit
+  def push(id: Id, deltaUpdate: P): Unit
 
   def output(out: WorkerOut): Unit
 }
 
-case class PullAnswerFuture[P](paramId: Int) extends Future[(Int, P)] {
+case class PullAnswerFuture[Id, P](paramId: Id) extends Future[(Id, P)] {
 
-  private var callback: Try[(Int, P)] => Any = x => ()
-  private var pullAnswer: Option[Try[(Int, P)]] = None
+  private var callback: Try[(Id, P)] => Any = x => ()
+  private var pullAnswer: Option[Try[(Id, P)]] = None
 
-  def pullArrived(paramId: Int, param: P): Unit = {
+  def pullArrived(paramId: Id, param: P): Unit = {
     pullAnswer = Some(Success(paramId -> param))
     callback(pullAnswer.get)
   }
 
-  override def onComplete[U](f: (Try[(Int, P)]) => U)(implicit executor: ExecutionContext): Unit = {
+  override def onComplete[U](f: (Try[(Id, P)]) => U)(implicit executor: ExecutionContext): Unit = {
     pullAnswer match {
       case None =>
         callback = x => {
@@ -432,7 +444,7 @@ case class PullAnswerFuture[P](paramId: Int) extends Future[(Int, P)] {
     pullAnswer.isDefined
   }
 
-  override def value: Option[Try[(Int, P)]] = {
+  override def value: Option[Try[(Id, P)]] = {
     pullAnswer
   }
 
@@ -440,7 +452,7 @@ case class PullAnswerFuture[P](paramId: Int) extends Future[(Int, P)] {
     this
   }
 
-  override def result(atMost: Duration)(implicit permit: CanAwait): (Int, P) = {
+  override def result(atMost: Duration)(implicit permit: CanAwait): (Id, P) = {
     throw new UnsupportedOperationException()
   }
 

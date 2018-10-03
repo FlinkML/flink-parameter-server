@@ -36,7 +36,7 @@ object BloomFilter {
                   psParallelism: Int,
                   iterationWaitTime: Long) : DataStream[(Int,  mutable.BitSet)] = {
 
-    val workerLogic = new WorkerLogic[(String, Array[String]), Vector, Array[String]] {
+    val workerLogic = new WorkerLogic[(String, Array[String]), Int, Vector, Array[String]] {
 
       /**
         * Method called when new data arrives.
@@ -47,7 +47,7 @@ object BloomFilter {
         * @param ps
         * Interface to ParameterServer.
         */
-      override def onRecv(data: (String, Array[String]), ps: ParameterServerClient[Vector, Array[String]]): Unit = {
+      override def onRecv(data: (String, Array[String]), ps: ParameterServerClient[Int, Vector, Array[String]]): Unit = {
 
         val id = data._1
         val tweet = data._2
@@ -72,7 +72,7 @@ object BloomFilter {
         * @param ps
         * Interface to ParameterServer.
         */
-      override def onPullRecv(paramId: Int, paramValue: Vector, ps: ParameterServerClient[Vector, Array[String]]): Unit = ???
+      override def onPullRecv(paramId: Int, paramValue: Vector, ps: ParameterServerClient[Int, Vector, Array[String]]): Unit = ???
     }
 
     val serverLogic = new BloomPSLogic

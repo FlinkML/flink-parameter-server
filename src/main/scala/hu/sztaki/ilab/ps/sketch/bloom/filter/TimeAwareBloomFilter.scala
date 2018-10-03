@@ -35,7 +35,7 @@ object TimeAwareBloomFilter {
                   psParallelism: Int,
                   iterationWaitTime: Long): DataStream[((Int, Int), mutable.BitSet)] = {
 
-    val workerLogic = new WorkerLogic[(String, Array[String], Int), (Int, Vector), Any] {
+    val workerLogic = new WorkerLogic[(String, Array[String], Int), Int, (Int, Vector), Any] {
       /**
       * Method called when new data arrives.
       *
@@ -44,7 +44,7 @@ object TimeAwareBloomFilter {
       * @param ps
       * Interface to ParameterServer.
       */
-    override def onRecv(data: (String, Array[String], Int), ps: ParameterServerClient[(Int, Vector), Any]): Unit = {
+    override def onRecv(data: (String, Array[String], Int), ps: ParameterServerClient[Int, (Int, Vector), Any]): Unit = {
       val AS = (for(i <- 0 until numHashes)
         yield floorMod(scala.util.hashing.MurmurHash3.stringHash(data._1, i), arraySize))
         .toArray
@@ -65,7 +65,7 @@ object TimeAwareBloomFilter {
         * @param ps
         * Interface to ParameterServer.
         */
-      override def onPullRecv(paramId: Int, paramValue: (Int, Vector), ps: ParameterServerClient[(Int, Vector), Any]): Unit = ???
+      override def onPullRecv(paramId: Int, paramValue: (Int, Vector), ps: ParameterServerClient[Int, (Int, Vector), Any]): Unit = ???
     }
 
 

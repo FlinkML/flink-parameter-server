@@ -1,8 +1,8 @@
 package hu.sztaki.ilab.ps.entities
 
-case class WorkerToPS[P](workerPartitionIndex: Int, msg: Either[Pull, Push[P]])
-case class PSToWorker[P](workerPartitionIndex: Int, msg: PullAnswer[P])
+case class WorkerToPS[Id, P](workerPartitionIndex: Int, msg: Either[Pull[Id], Push[Id, P]])
+case class PSToWorker[Id, P](workerPartitionIndex: Int, msg: PullAnswer[Id, P])
 
-case class Pull(paramId: Int)
-case class Push[P](paramId: Int, delta: P)
-case class PullAnswer[P](paramId: Int, param: P)
+case class Pull[Id](paramId: Id)
+case class Push[Id, P](paramId: Id, delta: P)
+case class PullAnswer[Id, P](paramId: Id, param: P)

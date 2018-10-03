@@ -79,7 +79,7 @@ object PSOnlineMatrixFactorizationAndTopKGenerator {
 
     val workerLogic = WorkerLogic.addPullLimiter(baseWorkerLogic, pullLimit)
 
-    val serverLogic = new SimplePSLogic[LengthAndVector](
+    val serverLogic = new SimplePSLogic[UserId, LengthAndVector](
       x => attachLength(factorInitDesc.open().nextFactor(x)),
       { (vec, deltaVec) => attachLength(vectorSum(vec._2, deltaVec._2))}
     )

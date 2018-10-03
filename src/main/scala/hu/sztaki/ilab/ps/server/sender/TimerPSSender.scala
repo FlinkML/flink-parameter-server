@@ -5,6 +5,6 @@ import hu.sztaki.ilab.ps.entities.PSToWorker
 
 import scala.concurrent.duration.FiniteDuration
 
-case class TimerPSSender[P](intervalLength: FiniteDuration)
-  extends TimerLogic[PSToWorker[P]](intervalLength)
+case class TimerPSSender[Id, P](intervalLength: FiniteDuration)
+  extends TimerLogic[PSToWorker[Id, P]](intervalLength)
     with Serializable

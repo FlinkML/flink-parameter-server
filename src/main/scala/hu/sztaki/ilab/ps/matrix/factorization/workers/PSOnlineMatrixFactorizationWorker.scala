@@ -24,7 +24,7 @@ class PSOnlineMatrixFactorizationWorker(numFactors: Int,
                                         rangeMax: Double,
                                         learningRate: Double,
                                         userMemory: Int,
-                                        negativeSampleRate: Int)  extends WorkerLogic[Rating, Vector, (UserId, Vector)]{
+                                        negativeSampleRate: Int)  extends WorkerLogic[Rating, ItemId, Vector, (UserId, Vector)]{
 
 
 
@@ -39,7 +39,7 @@ class PSOnlineMatrixFactorizationWorker(numFactors: Int,
   val seenItemsQueue = new mutable.HashMap[UserId, mutable.Queue[ItemId]]
 
   override
-  def onPullRecv(paramId: ItemId, paramValue: Vector, ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
+  def onPullRecv(paramId: ItemId, paramValue: Vector, ps: ParameterServerClient[ItemId, Vector, (UserId, Vector)]): Unit = {
     val rating = ratingBuffer synchronized {
       ratingBuffer(paramId).dequeue()
     }
@@ -56,7 +56,7 @@ class PSOnlineMatrixFactorizationWorker(numFactors: Int,
 
 
   override
-  def onRecv(data: Rating, ps: ParameterServerClient[Vector, (UserId, Vector)]): Unit = {
+  def onRecv(data: Rating, ps: ParameterServerClient[ItemId, Vector, (UserId, Vector)]): Unit = {
 
     val seenSet = seenItemsSet.getOrElseUpdate(data.user, new mutable.HashSet)
     val seenQueue = seenItemsQueue.getOrElseUpdate(data.user, new mutable.Queue)
