@@ -1,7 +1,7 @@
 # Flink Parameter Server
 
 A Parameter Server implementation based on the
-[Streaming API](https://ci.apache.org/projects/flink/flink-docs-release-1.2/dev/datastream_api.html) of [Apache Flink](http://flink.apache.org/).
+[Streaming API](https://ci.apache.org/projects/flink/flink-docs-stable/dev/datastream_api.html) of [Apache Flink](http://flink.apache.org/).
 
 Parameter Server is an abstraction for model-parallel machine learning (see the work of [Li et al.](https://doi.org/10.1145/2640087.2644155)).
 Our implementation could be used with the Streaming API:
@@ -17,7 +17,7 @@ sbt publish-local
 and then added to a project as a dependency
 
 ```sbt
-libraryDependencies += "hu.sztaki.ilab" % "flink-ps" % "0.1.0"
+libraryDependencies += "hu.sztaki.ilab" %% "flink-ps" % "0.1.0"
 ```
 
 # API
@@ -30,34 +30,36 @@ Basically, we can access the Parameter Server by defining a [```WorkerLogic```](
 
 We need to implement the ```WorkerLogic``` trait
 ```scala
-trait WorkerLogic[T, P, WorkerOut] extends Serializable {
-  def onRecv(data: T, ps: ParameterServerClient[P, WorkerOut]): Unit
-  def onPullRecv(paramId: Int, paramValue: P, ps: ParameterServerClient[P, WorkerOut]): Unit
+trait WorkerLogic[T, Id, P, WOut] extends Serializable {
+  def onRecv(data: T, ps: ParameterServerClient[Id, P, WOut]): Unit
+  def onPullRecv(paramId: Id, paramValue: P, ps: ParameterServerClient[Id, P, WOut]): Unit
 }
 ```
 where we can handle incoming data (`onRecv`), *pull* parameters from the Parameter Server, handle the answers to the pulls (`onPullRecv`), and *push* parameters to the Parameter Server or *output* results. We can use the ```ParameterServerClient```:
 ```scala
-trait ParameterServerClient[P, WorkerOut] extends Serializable {
-  def pull(id: Int): Unit
-  def push(id: Int, deltaUpdate: P): Unit
-  def output(out: WorkerOut): Unit
+trait ParameterServerClient[Id, P, WOut] extends Serializable {
+  def pull(id: Id): Unit
+  def push(id: Id, deltaUpdate: P): Unit
+  def output(out: WOut): Unit
 }
 ```
 
 When we defined our worker logic we can wire it into a Flink job with the `transform` method of [```FlinkParameterServer```](src/main/scala/hu/sztaki/ilab/ps/FlinkParameterServer.scala).
 
 ```scala
-def transform[T, P, WorkerOut](
+def transform[T, Id, P, WOut](
   trainingData: DataStream[T],
-  workerLogic: WorkerLogic[T, P, WorkerOut],
-  paramInit: => Int => P,
+  workerLogic: WorkerLogic[T, Id, P, WOut],
+  paramInit: => Id => P,
   paramUpdate: => (P, P) => P,
   workerParallelism: Int,
   psParallelism: Int,
-  iterationWaitTime: Long): DataStream[Either[WorkerOut, (Int, P)]]
+  iterationWaitTime: Long): DataStream[Either[WOut, (Id, P)]]
 ```
 
 Besides the `trainingData` stream and the `workerLogic`, we need to define how the Parameter Server should initialize a parameter based on the parameter id (`paramInit`), and how to update a parameter based on a received push (`paramUpdate`). We must also define how many parallel instances of workers and parameter servers we should use (`workerParallelism` and `psParallelism`), and the `iterationWaitTime` (see [Limitations](README.md#limitations)).
+
+There are also other options to define a DataStream transformation with a Parameter Server which let us specialize the process in more detail. See the different methods of [```FlinkParameterServer```](src/main/scala/hu/sztaki/ilab/ps/FlinkParameterServer.scala).
 
 # Limitations
 
